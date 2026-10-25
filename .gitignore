@@ -8,6 +8,6 @@ dist
 .DS_Store
 *.stale*
 coverage
-.github\workflows
+.github/workflows
 server/test/qa/*-results.json
 QA_REPORT.md
