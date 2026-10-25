@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ff
+          POSTGRES_PASSWORD: ff
+          POSTGRES_DB: liteforeflow
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ff" --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://ff:ff@localhost:5432/liteforeflow
+      TEST_REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build editor
+        run: npm run build
+      - name: Tests on SQLite + in-process queue
+        run: env -u TEST_DATABASE_URL -u TEST_REDIS_URL npm test
+      - name: Tests on Postgres + in-process queue
+        run: env -u TEST_REDIS_URL npm test
+      - name: Tests on Postgres + Redis/BullMQ
+        run: npm test
+      - name: Multi-process worker tests
+        run: node --test --test-concurrency=1 --test-timeout=120000 server/test/distributed.test.js
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t liteforeflow:ci .

@@ -1,0 +1,59 @@
+# Production-shaped stack: Postgres + Redis + API process + horizontally scalable worker processes.
+#   LITEFOREFLOW_SECRET=$(openssl rand -hex 32) docker compose up --build --scale worker=3
+# Verified end to end (see README "Verified in containers").
+x-app: &app
+  build: .
+  restart: unless-stopped
+  environment: &env
+    DATABASE_URL: postgres://liteforeflow:${POSTGRES_PASSWORD:-liteforeflow}@postgres:5432/liteforeflow
+    REDIS_URL: redis://redis:6379
+    LITEFOREFLOW_SECRET: ${LITEFOREFLOW_SECRET:?set LITEFOREFLOW_SECRET (it encrypts stored credentials - back it up)}
+    PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+    BLOCK_PRIVATE_NETWORK: ${BLOCK_PRIVATE_NETWORK:-true}
+    MAX_CONCURRENCY: ${MAX_CONCURRENCY:-10}
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: liteforeflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-liteforeflow}
+      POSTGRES_DB: liteforeflow
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U liteforeflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    # BullMQ needs noeviction so queued jobs are never dropped; AOF keeps them across restarts.
+    command: ["redis-server", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    <<: *app
+    environment: { <<: *env, LITEFOREFLOW_ROLE: api }
+    ports: ["3000:3000"]
+
+  worker:
+    <<: *app
+    environment: { <<: *env, LITEFOREFLOW_ROLE: worker }
+    # Scale with: docker compose up --scale worker=N
+    stop_grace_period: 60s   # SIGTERM lets in-flight runs finish (verified); only then is the container killed
+    healthcheck: { disable: true }   # workers serve no HTTP; the image's /api/health check is for the api role
+
+volumes:
+  pgdata:
+  redisdata:
