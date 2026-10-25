@@ -10,7 +10,11 @@ export default function Executions() {
   const [error, setError] = useState('');
 
   const load = () => api(`/executions?limit=100${status ? `&status=${status}` : ''}`).then(setList).catch((e) => setError(e.message));
-  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    load();
+    const t = setInterval(() => { if (!document.hidden) load(); }, 15000); // no background polling from hidden tabs
+    return () => clearInterval(t);
+  }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="page">

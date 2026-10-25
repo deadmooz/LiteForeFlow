@@ -12,7 +12,8 @@ COPY . .
 RUN npm run build && npm prune --omit=dev
 
 FROM node:24-bookworm-slim
-ENV NODE_ENV=production DATA_DIR=/data
+# Small young-generation + capped heap keep RSS low; raise --max-old-space-size if you process very large payloads.
+ENV NODE_ENV=production DATA_DIR=/data NODE_OPTIONS="--max-semi-space-size=2 --max-old-space-size=192"
 WORKDIR /app
 COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/package.json ./

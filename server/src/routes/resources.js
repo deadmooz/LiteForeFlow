@@ -8,8 +8,9 @@ import { listNodeTypes } from '../nodes/index.js';
 import { templates, getTemplate } from '../templates.js';
 import { convertN8nWorkflow } from '../importer.js';
 import { createWorkflow } from './workflows.js';
-import { getUsage, plans } from '../plans.js';
+import { getUsage, plans, invalidatePlan } from '../plans.js';
 import { config } from '../config.js';
+import { parseStored } from '../packing.js';
 import { httpRequest } from '../http.js';
 
 /* ------------------------------- node types ----------------------------------- */
@@ -87,7 +88,7 @@ executionsRouter.get('/:id', async (req, res) => {
   res.json({
     id: r.id, workflowId: r.workflow_id, workflowName: r.workflow_name, status: r.status, mode: r.mode,
     startedAt: r.started_at, finishedAt: r.finished_at, worker: r.worker, error: r.error ? JSON.parse(r.error) : null,
-    results: r.data ? JSON.parse(r.data) : {},
+    results: parseStored(r.data) ?? {},
   });
 });
 
@@ -144,6 +145,7 @@ toolsRouter.post('/billing/dev-plan', async (req, res) => {
   if (req.role !== 'owner') throw new HttpError(403, 'Only the owner can change the plan');
   if (!plans[req.body?.plan]) throw new HttpError(400, 'Unknown plan');
   await run('UPDATE workspaces SET plan = ? WHERE id = ?', req.body.plan, req.workspaceId);
+  invalidatePlan(req.workspaceId);
   res.json(await getUsage(req.workspaceId));
 });
 
@@ -168,6 +170,7 @@ stripeWebhookRouter.post('/', express.raw({ type: '*/*', limit: '1mb' }), async 
   const obj = event.data?.object ?? {};
   if (event.type === 'checkout.session.completed' && obj.metadata?.workspaceId && plans[obj.metadata.plan]) {
     await run('UPDATE workspaces SET plan = ?, stripe_customer_id = ? WHERE id = ?', obj.metadata.plan, obj.customer ?? null, obj.metadata.workspaceId);
+    invalidatePlan(obj.metadata.workspaceId);
   } else if (event.type === 'customer.subscription.deleted' && obj.customer) {
     await run("UPDATE workspaces SET plan = 'free' WHERE stripe_customer_id = ?", obj.customer);
   }

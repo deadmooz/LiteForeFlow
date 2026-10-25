@@ -26,6 +26,9 @@ export const config = {
   // When true, the HTTP node refuses to call loopback/private addresses (recommended for hosted multi-tenant use).
   blockPrivateNetwork: env.BLOCK_PRIVATE_NETWORK === 'true',
   enableCodeNode: env.ENABLE_CODE_NODE !== 'false',
+  // Set SAVE_SUCCESS_DATA=false to keep only a one-line record of successful runs (errors always keep full data).
+  saveSuccessData: env.SAVE_SUCCESS_DATA !== 'false',
+  authRateLimitPerMin: Number(env.AUTH_RATE_LIMIT_PER_MIN) || 20,
   allowSignup: env.ALLOW_SIGNUP !== 'false',
   isProd: env.NODE_ENV === 'production',
   stripe: {

@@ -389,6 +389,14 @@ function EditorInner() {
                   onChange={(e) => { setMeta({ ...meta, settings: { ...meta.settings, timeoutSec: Number(e.target.value) } }); markDirty(); }}
                 />
               </label>
+              <label className="inline">
+                <input
+                  type="checkbox" checked={meta.settings.saveSuccessData ?? true}
+                  onChange={(e) => { setMeta({ ...meta, settings: { ...meta.settings, saveSuccessData: e.target.checked } }); markDirty(); }}
+                />
+                Keep node data of successful runs
+              </label>
+              <span className="muted small">Turn off for high-volume workflows to save storage. Failed runs and editor runs always keep full data.</span>
               <p className="muted small">Workflow ID: <code>{id}</code></p>
               {lastRun && (
                 <>

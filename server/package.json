@@ -8,8 +8,8 @@
   },
   "scripts": {
     "dev": "node --watch src/index.js",
-    "worker": "node src/worker.js",
-    "start": "node src/index.js",
+    "worker": "node --max-semi-space-size=2 --max-old-space-size=192 src/worker.js",
+    "start": "node --max-semi-space-size=2 --max-old-space-size=192 src/index.js",
     "test": "node --test --test-concurrency=1 test/api.test.js"
   },
   "dependencies": {

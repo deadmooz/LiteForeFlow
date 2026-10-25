@@ -69,7 +69,8 @@ const splitStatements = (sql) => sql.split(/;\s*(?:\n|$)/).map((s) => s.trim()).
 async function createSqlite() {
   const { DatabaseSync } = await import('node:sqlite');
   const db = new DatabaseSync(config.dbPath || path.join(config.dataDir, 'liteforeflow.db'));
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+  // WAL + synchronous=NORMAL: far fewer fsyncs; a power loss can drop the last commits but never corrupts the file.
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA journal_size_limit = 8388608; PRAGMA cache_size = -4096;');
   const bind = (p) => p.map((v) => (v === undefined ? null : v));
   const q = {
     all: async (sql, ...p) => db.prepare(sql).all(...bind(p)),

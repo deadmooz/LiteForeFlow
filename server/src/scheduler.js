@@ -1,4 +1,3 @@
-import cron from 'node-cron';
 import { all, get, run, transaction } from './db.js';
 import { getNodeType, withDefaults } from './nodes/index.js';
 import { validateWorkflow } from './engine.js';
@@ -54,6 +53,7 @@ async function clearSchedules(workflowId) {
 
 /** Validates, registers webhooks, starts schedules and flips `active`. */
 export async function activateWorkflow(workflow) {
+  const { default: cron } = await import('node-cron');
   const issues = validateWorkflow(workflow.definition);
   if (issues.length) throw new ActivationError(`Cannot activate: ${issues[0]}`);
   await assertCanActivate(workflow.workspaceId, workflow.active);

@@ -1,4 +1,3 @@
-import cron from 'node-cron';
 import { config } from './config.js';
 
 /*
@@ -55,6 +54,7 @@ function createMemoryDriver() {
       schedules.get(key)?.();
       const fire = () => { execute(payload).catch((e) => console.error(`[schedule ${key}]`, e.message)); };
       if (spec.pattern) {
+        const { default: cron } = await import('node-cron'); // only loaded when a schedule exists
         if (!cron.validate(spec.pattern)) throw new Error(`Invalid cron expression "${spec.pattern}"`);
         const task = cron.schedule(spec.pattern, fire, { timezone: spec.tz || 'UTC' });
         schedules.set(key, () => task.stop());

@@ -48,6 +48,29 @@ How it fits together:
 - **Back-pressure:** new runs are refused with 503 when more than `MAX_QUEUE_DEPTH` jobs are waiting. Monthly run limits are enforced with an atomic `UPDATE … WHERE runs < cap`, so they hold across processes.
 - Shutdown (`SIGTERM`) stops taking jobs and waits for in-flight ones (up to 30 s).
 
+### Running it on a small server
+
+The default mode (SQLite + in-process queue, one Node process) is the lightest. Measured with `node server/test/bench.mjs`
+(600 webhook runs of Webhook → Code → Edit Fields, 10 concurrent, Node 24, Windows dev machine):
+
+| | Before tuning | After |
+|---|---|---|
+| Idle memory (RSS) | 62 MB | **54 MB** |
+| Peak under load | ~80 MB | **~71 MB** |
+| Startup | ~330 ms | ~300 ms |
+| Throughput | ~100 runs/s | ~100 runs/s (same; noisy ±40%) |
+
+What keeps it small, and the knobs if you need to go lower:
+
+- `npm start` runs Node with `--max-semi-space-size=2 --max-old-space-size=192` (about −8 MB idle, −10 MB peak). Raise the heap cap if you process very large payloads.
+- Heavy modules load only when used: the V8 sandbox (`isolated-vm`) on the first expression/Code node, `node-cron` on the first schedule, Postgres/Redis/BullMQ/SMTP only when configured or used. No Redis, no Postgres, no worker processes in the default mode.
+- Each run does 4 small database writes (it used to do 7 plus a plan lookup): the run counter is one atomic statement, plans are cached for 30 s, static data is written only when it changed, and SQLite runs in WAL with `synchronous=NORMAL` (far fewer fsyncs).
+- Execution logs are gzip-compressed (about 5–10× smaller on typical JSON). To store even less, untick **Keep node data of successful runs** in a workflow's settings, or set `SAVE_SUCCESS_DATA=false` globally. Failed runs and editor runs always keep full data.
+- Log retention is 3 days on Free; lower `MAX_CONCURRENCY` and `SANDBOX_MEMORY_MB` (default 64 MB per running node) to cap peak memory on tiny hosts.
+- The editor serves fingerprinted assets with a 1-year cache header, and the executions page no longer polls from hidden tabs (15 s otherwise).
+
+Not measured: a real 512 MB / 1 vCPU VPS, Linux, or memory over days of uptime. CPU is the first limit you will hit: expressions and Code nodes run synchronously (up to their 1–5 s timeouts).
+
 ### Tests
 
 ```bash

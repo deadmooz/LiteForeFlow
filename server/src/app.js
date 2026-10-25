@@ -41,7 +41,9 @@ export function createApp() {
   // Serve the built editor (npm run build) from the same origin.
   const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/dist');
   if (fs.existsSync(dist)) {
-    app.use(express.static(dist));
+    // Vite fingerprints everything under /assets, so browsers can keep it forever instead of re-downloading.
+    app.use('/assets', express.static(path.join(dist, 'assets'), { immutable: true, maxAge: '1y' }));
+    app.use(express.static(dist, { maxAge: 0 }));
     app.get('*', (req, res) => res.sendFile(path.join(dist, 'index.html')));
   }
 

@@ -6,6 +6,7 @@ import { enqueue } from '../queue.js';
 import { activateWorkflow, deactivateWorkflow } from '../scheduler.js';
 import { validateWorkflow } from '../engine.js';
 import { getNodeType, withDefaults } from '../nodes/index.js';
+import { parseStored } from '../packing.js';
 
 export const workflowsRouter = express.Router();
 
@@ -126,7 +127,7 @@ workflowsRouter.post('/:id/run', async (req, res) => {
   }, { wait: true });
 
   const row = await get('SELECT data FROM executions WHERE id = ?', result.executionId);
-  res.json({ ...result, results: row?.data ? JSON.parse(row.data) : {} });
+  res.json({ ...result, results: parseStored(row?.data) ?? {} });
 });
 
 workflowsRouter.post('/:id/nodes/:nodeId/test', async (req, res) => {
@@ -139,7 +140,7 @@ workflowsRouter.post('/:id/nodes/:nodeId/test', async (req, res) => {
   let items = Array.isArray(input) ? input.map((j) => ({ json: j })) : null;
   if (!items) {
     const recent = await all('SELECT data FROM executions WHERE workflow_id = ? AND data IS NOT NULL ORDER BY started_at DESC LIMIT 10', wf.id);
-    items = recent.map((r) => JSON.parse(r.data)[node.id]?.input?.[0]).find((x) => x?.length) ?? sampleItems(node);
+    items = recent.map((r) => parseStored(r.data)?.[node.id]?.input?.[0]).find((x) => x?.length) ?? sampleItems(node);
   }
   res.json(await enqueue({
     kind: 'test-node', workflowId: wf.id, workspaceId: wf.workspaceId, definition: definition ? def : undefined, nodeId: node.id, input: items,

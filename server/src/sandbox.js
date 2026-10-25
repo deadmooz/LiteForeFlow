@@ -1,4 +1,8 @@
-import ivm from 'isolated-vm';
+import { createRequire } from 'node:module';
+
+// The native module is only loaded the first time a node needs it, so workflows without expressions/code never pay for it.
+let ivmModule = null;
+const ivm = () => (ivmModule ??= createRequire(import.meta.url)('isolated-vm'));
 
 /*
  * V8-isolate sandbox for {{ expressions }} and the Code node.
@@ -45,7 +49,7 @@ export class Sandbox {
   #iso = null;
 
   #isolate() {
-    if (!this.#iso || this.#iso.isDisposed) this.#iso = new ivm.Isolate({ memoryLimit: MEMORY_MB });
+    if (!this.#iso || this.#iso.isDisposed) this.#iso = new (ivm().Isolate)({ memoryLimit: MEMORY_MB });
     return this.#iso;
   }
 

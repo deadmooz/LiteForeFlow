@@ -17,9 +17,19 @@ export class LimitError extends Error {
   }
 }
 
+// Plans change rarely but are read on every run, so keep them briefly in memory (other processes may lag by the TTL).
+const PLAN_TTL_MS = 30_000;
+const planCache = new Map();
+export const invalidatePlan = (workspaceId) => planCache.delete(workspaceId);
+
 export const getPlan = async (workspaceId) => {
+  const hit = planCache.get(workspaceId);
+  if (hit && hit.exp > Date.now()) return hit.plan;
   const ws = await get('SELECT plan FROM workspaces WHERE id = ?', workspaceId);
-  return plans[ws?.plan] ?? plans.free;
+  const plan = plans[ws?.plan] ?? plans.free;
+  if (planCache.size > 5000) planCache.clear();
+  planCache.set(workspaceId, { plan, exp: Date.now() + PLAN_TTL_MS });
+  return plan;
 };
 
 const currentMonth = () => new Date().toISOString().slice(0, 7);
@@ -30,14 +40,10 @@ const currentMonth = () => new Date().toISOString().slice(0, 7);
  */
 export async function reserveRun(workspaceId) {
   const plan = await getPlan(workspaceId);
-  const month = currentMonth();
-  await run(
-    'INSERT INTO usage (workspace_id, month, runs) VALUES (?, ?, 0) ON CONFLICT (workspace_id, month) DO NOTHING',
-    workspaceId, month,
-  );
+  // One atomic statement: insert the month's counter or bump it, but only while under the cap.
   const { changes } = await run(
-    'UPDATE usage SET runs = runs + 1 WHERE workspace_id = ? AND month = ? AND runs < ?',
-    workspaceId, month, plan.runsPerMonth,
+    'INSERT INTO usage (workspace_id, month, runs) VALUES (?, ?, 1) ON CONFLICT (workspace_id, month) DO UPDATE SET runs = usage.runs + 1 WHERE usage.runs < ?',
+    workspaceId, currentMonth(), plan.runsPerMonth,
   );
   if (!changes) {
     throw new LimitError(`Monthly run limit reached (${plan.runsPerMonth.toLocaleString()} on the ${plan.name} plan). Upgrade to continue.`);

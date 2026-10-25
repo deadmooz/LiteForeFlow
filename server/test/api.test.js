@@ -10,6 +10,7 @@ const RUN_ID = crypto.randomBytes(4).toString('hex');
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'liteforeflow-'));
 process.env.LITEFOREFLOW_SECRET = 'test-secret';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+process.env.AUTH_RATE_LIMIT_PER_MIN = '1000'; // this suite creates many accounts from one IP
 // The same suite runs against the default stack (SQLite + in-process queue) or the production stack
 // (Postgres + Redis/BullMQ) when TEST_DATABASE_URL / TEST_REDIS_URL are set.
 const PG_SCHEMA = `ff_test_${RUN_ID}`;
@@ -432,4 +433,49 @@ test('sandbox: memory bombs and host APIs are contained, large item counts stay 
   assert.deepEqual(r3.data.results.s.output[0][7].json, { sq: 49, label: 'n7' });
   assert.ok(elapsed < 15000, `1500 items took ${elapsed}ms`);
   console.log(`# 1500 items x 2 expressions in ${elapsed}ms`);
+});
+
+test('footprint: logs are compressed, success data can be dropped, static data is only written when changed', async () => {
+  const { get } = await import('../src/db.js');
+  const { pack, unpack } = await import('../src/packing.js');
+  const token = await newUser();
+
+  const sample = JSON.stringify(Array.from({ length: 200 }, (_, i) => ({ id: i, name: `item ${i}`, tags: ['a', 'b', 'c'] })));
+  assert.ok(pack(sample).length < sample.length / 4, 'repetitive JSON compresses well');
+  assert.equal(unpack(pack(sample)), sample);
+  assert.equal(pack('{"small":1}'), '{"small":1}'); // tiny payloads stay plain text
+
+  const mk = (name, path, settings) => createWf(token, name, [
+    node('t', 'trigger.webhook', 'Hook', { path, method: 'POST', respond: 'lastNode' }),
+    node('g', 'data.code', 'Gen', { mode: 'runOnce', code: 'return Array.from({ length: 150 }, (_, i) => ({ i, text: "row " + i }));' }),
+  ], [edge('t', 'g')], settings);
+
+  const keep = await mk('keeps', `fp-keep-${counter}`);
+  const drop = await mk('drops', `fp-drop-${counter}`, { saveSuccessData: false });
+  for (const wf of [keep, drop]) await api('POST', `/api/workflows/${wf.id}/activate`, { token });
+  await fetch(`${base}/webhook/fp-keep-${counter}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  await fetch(`${base}/webhook/fp-drop-${counter}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+
+  const row = async (wf) => (await get('SELECT status, data FROM executions WHERE workflow_id = ?', wf.id));
+  const kept = await row(keep);
+  const dropped = await row(drop);
+  assert.equal(kept.status, 'success');
+  assert.ok(kept.data.startsWith('gz:'), 'stored run data is compressed');
+  const list = (await api('GET', `/api/executions?workflowId=${keep.id}`, { token })).data;
+  const detail = (await api('GET', `/api/executions/${list[0].id}`, { token })).data;
+  assert.equal(detail.results.g.output[0].length, 100); // readable through the API, capped at 100 items
+  assert.equal(dropped.status, 'success');
+  assert.equal(dropped.data, null, 'successful runs keep only the one-line record');
+
+  // A failing run always keeps its data so it can be debugged, even with saveSuccessData off.
+  const bad = await createWf(token, 'bad', [
+    node('t', 'trigger.webhook', 'Hook', { path: `fp-bad-${counter}`, method: 'POST' }),
+    node('x', 'logic.stopAndError', 'Boom', { message: 'nope' }),
+  ], [edge('t', 'x')], { saveSuccessData: false });
+  await api('POST', `/api/workflows/${bad.id}/activate`, { token });
+  await fetch(`${base}/webhook/fp-bad-${counter}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  await new Promise((r) => setTimeout(r, 400));
+  const failed = await get('SELECT status, data FROM executions WHERE workflow_id = ?', bad.id);
+  assert.equal(failed.status, 'error');
+  assert.ok(failed.data, 'failed runs keep their data');
 });

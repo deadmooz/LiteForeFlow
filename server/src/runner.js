@@ -3,6 +3,8 @@ import { all, get, run, uid, now } from './db.js';
 import { runWorkflow } from './engine.js';
 import { reserveRun, getPlan } from './plans.js';
 import { enqueue } from './queue.js';
+import { config } from './config.js';
+import { pack } from './packing.js';
 
 export const workerId = `${os.hostname()}:${process.pid}`;
 
@@ -65,6 +67,7 @@ export async function runExecution({ executionId, workflow, mode, triggerNodeId,
   );
   if (!claimed.changes) return { executionId, status: 'skipped', error: null, lastOutput: [] }; // duplicate delivery or already reaped
 
+  const staticBefore = JSON.stringify(workflow.staticData ?? {}); // the engine mutates staticData in place
   let result;
   try {
     result = await runWorkflow({
@@ -75,12 +78,19 @@ export async function runExecution({ executionId, workflow, mode, triggerNodeId,
     result = { status: 'error', error: { message: `Internal error: ${e.message}` }, results: {}, lastOutput: [], staticData: workflow.staticData, finishedAt: now() };
   }
 
-  const { json, truncated } = compactResults(result.results);
+  // High-volume users can drop the per-node data of successful runs (workflow setting, or SAVE_SUCCESS_DATA=false globally).
+  // Editor runs always keep it so the canvas can show results.
+  const keepData = result.status !== 'success' || mode === 'manual' || (workflow.settings?.saveSuccessData ?? config.saveSuccessData);
+  const { json, truncated } = keepData ? compactResults(result.results) : { json: null, truncated: false };
   await run(
     'UPDATE executions SET status = ?, finished_at = ?, data = ?, error = ? WHERE id = ?',
-    result.status, result.finishedAt, json, result.error ? JSON.stringify({ ...result.error, truncated }) : null, executionId,
+    result.status, result.finishedAt, json && pack(json), result.error ? JSON.stringify({ ...result.error, truncated }) : null, executionId,
   );
-  await run('UPDATE workflows SET static_data = ? WHERE id = ?', JSON.stringify(result.staticData ?? {}), workflow.id);
+  // Most workflows never touch static data; only write when it actually changed.
+  const staticJson = JSON.stringify(result.staticData ?? {});
+  if (staticJson !== staticBefore) {
+    await run('UPDATE workflows SET static_data = ? WHERE id = ?', staticJson, workflow.id);
+  }
 
   if (result.status === 'error' && mode !== 'error' && mode !== 'subworkflow') {
     submitErrorWorkflow(workflow, executionId, result.error).catch((e) => console.error('[error-workflow]', e.message));

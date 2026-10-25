@@ -19,7 +19,7 @@ function rateLimit(req, res, next) {
   const key = req.ip;
   const t = Date.now();
   const recent = (attempts.get(key) ?? []).filter((x) => t - x < 60_000);
-  if (recent.length >= 20) return next(new HttpError(429, 'Too many attempts, try again in a minute'));
+  if (recent.length >= config.authRateLimitPerMin) return next(new HttpError(429, 'Too many attempts, try again in a minute'));
   recent.push(t);
   attempts.set(key, recent);
   return next();
