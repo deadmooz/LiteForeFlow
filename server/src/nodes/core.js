@@ -1,6 +1,6 @@
 import { defineNode, credentialProperty } from './registry.js';
 import { httpRequest } from '../http.js';
-import { runCode } from '../expressions.js';
+import { runCode, testRegex } from '../expressions.js';
 import { config } from '../config.js';
 import { get } from '../db.js';
 import { loadCredential } from '../credentials.js';
@@ -72,7 +72,7 @@ defineNode({
     { name: 'ignoreStatus', label: 'Do not fail on 4xx/5xx', type: 'boolean', default: false },
   ],
   async executeItem(ctx, item, i) {
-    const headers = { ...(ctx.jsonParam('headers', i) ?? {}) };
+    const headers = { ...((await ctx.jsonParam('headers', i)) ?? {}) };
     const credId = ctx.rawParam('credential');
     if (credId) {
       const row = await get('SELECT type FROM credentials WHERE id = ? AND workspace_id = ?', credId, ctx.workspaceId);
@@ -83,9 +83,10 @@ defineNode({
       else if (row.type === 'httpHeader') headers[c.name] = c.value;
     }
     const res = await httpRequest({
-      method: ctx.param('method', i), url: ctx.param('url', i), headers,
-      query: ctx.jsonParam('query', i) ?? {}, body: ctx.param('body', i), bodyType: ctx.param('bodyType', i),
-      timeoutMs: Number(ctx.param('timeoutSec', i) || 30) * 1000, ignoreStatus: !!ctx.param('ignoreStatus', i),
+      method: (await ctx.param('method', i)), url: (await ctx.param('url', i)), headers,
+      query: (await ctx.jsonParam('query', i)) ?? {}, body: (await ctx.param('body', i)), bodyType: (await ctx.param('bodyType', i)),
+      timeoutMs: Number((await ctx.param('timeoutSec', i)) || 30) * 1000, ignoreStatus: !!(await ctx.param('ignoreStatus', i)),
+      signal: ctx.signal,
     });
     const d = res.data;
     // Arrays are returned under `data`; objects are spread for convenient access ({{ $json.name }}).
@@ -110,21 +111,27 @@ const OPS = {
   lte: (a, b) => Number(a) <= Number(b),
   isEmpty: (a) => a === undefined || a === null || a === '' || (Array.isArray(a) && a.length === 0),
   isNotEmpty: (a) => !OPS.isEmpty(a),
-  regex: (a, b) => new RegExp(String(b)).test(String(a)),
   isTrue: (a) => a === true || a === 'true',
   isFalse: (a) => a === false || a === 'false',
 };
 export const conditionOperators = Object.keys(OPS);
 
-function checkConditions(conds, combine) {
+async function checkConditions(conds, combine, sandbox) {
   const list = Array.isArray(conds) ? conds : [];
   if (!list.length) return true;
-  const test = (c) => {
+  const test = async (c) => {
+    // User-supplied regular expressions can backtrack catastrophically, so they never run on the server's own thread.
+    if (c.op === 'regex') return testRegex(c.right, c.left, { sandbox });
     const fn = OPS[c.op];
     if (!fn) throw new Error(`Unknown operator "${c.op}"`);
     return fn(c.left, c.right);
   };
-  return combine === 'any' ? list.some(test) : list.every(test);
+  for (const c of list) {
+    const ok = await test(c);
+    if (combine === 'any' && ok) return true;
+    if (combine !== 'any' && !ok) return false;
+  }
+  return combine !== 'any';
 }
 
 defineNode({
@@ -134,12 +141,13 @@ defineNode({
     { name: 'conditions', label: 'Conditions', type: 'conditions', default: [{ left: '{{ $json.value }}', op: 'equals', right: '' }] },
     { name: 'combine', label: 'Match', type: 'options', default: 'all', options: ['all', 'any'] },
   ],
-  execute(ctx, inputs) {
+  async execute(ctx, inputs) {
     const t = [];
     const f = [];
-    inputs[0].forEach((item, i) => {
-      (checkConditions(ctx.param('conditions', i), ctx.rawParam('combine')) ? t : f).push(item);
-    });
+    for (let i = 0; i < inputs[0].length; i += 1) {
+      const ok = await checkConditions(await ctx.param('conditions', i), ctx.rawParam('combine'), ctx.sandbox);
+      (ok ? t : f).push(inputs[0][i]);
+    }
     return [t, f];
   },
 });
@@ -151,16 +159,16 @@ defineNode({
     { name: 'value', label: 'Value', type: 'string', default: '{{ $json.type }}' },
     { name: 'cases', label: 'Cases (JSON array)', type: 'json', default: '["a"]', help: 'One output per case, plus a fallback output.' },
   ],
-  execute(ctx, inputs) {
+  async execute(ctx, inputs) {
     let cases = ctx.rawParam('cases');
     if (typeof cases === 'string') { try { cases = JSON.parse(cases); } catch { throw new Error('Cases must be a JSON array'); } }
     if (!Array.isArray(cases)) throw new Error('Cases must be a JSON array');
     const outs = Array.from({ length: cases.length + 1 }, () => []);
-    inputs[0].forEach((item, i) => {
-      const v = String(ctx.param('value', i));
+    for (let i = 0; i < inputs[0].length; i += 1) {
+      const v = String(await ctx.param('value', i));
       const idx = cases.findIndex((c) => String(c) === v);
-      outs[idx === -1 ? cases.length : idx].push(item);
-    });
+      outs[idx === -1 ? cases.length : idx].push(inputs[0][i]);
+    }
     return outs;
   },
 });
@@ -193,7 +201,10 @@ defineNode({
   properties: [{ name: 'seconds', label: 'Seconds', type: 'number', default: 5 }],
   async execute(ctx, inputs) {
     const s = Math.min(300, Math.max(0, Number(ctx.rawParam('seconds')) || 0));
-    await new Promise((r) => setTimeout(r, s * 1000));
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, s * 1000);
+      ctx.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(ctx.signal.reason); }, { once: true }); // stop waiting when the run times out
+    });
     return [inputs[0]];
   },
 });
@@ -208,7 +219,7 @@ defineNode({
   type: 'logic.stopAndError', name: 'Stop and Error', group: 'logic', icon: '🛑',
   description: 'Fail the run on purpose with a message (triggers the error workflow).',
   properties: [{ name: 'message', label: 'Error message', type: 'string', default: 'Something went wrong' }],
-  execute(ctx) { throw new Error(String(ctx.param('message'))); },
+  async execute(ctx) { throw new Error(String(await ctx.param('message'))); },
 });
 
 defineNode({
@@ -223,13 +234,20 @@ defineNode({
 
 /* ------------------------------------ Data ------------------------------------ */
 
+// Field names come from users: "__proto__.x" or "constructor.prototype.x" must never reach Object.prototype.
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const setPath = (obj, path, value) => {
   const keys = path.split('.');
+  if (keys.some((k) => FORBIDDEN_KEYS.has(k))) throw new Error(`Field name "${path}" is not allowed ("__proto__", "constructor" and "prototype" are reserved)`);
   let cur = obj;
-  keys.slice(0, -1).forEach((k) => { if (typeof cur[k] !== 'object' || cur[k] === null) cur[k] = {}; cur = cur[k]; });
+  for (const k of keys.slice(0, -1)) {
+    if (!hasOwn(cur, k) || typeof cur[k] !== 'object' || cur[k] === null) cur[k] = {};
+    cur = cur[k];
+  }
   cur[keys.at(-1)] = value;
 };
-const getPath = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+const getPath = (obj, path) => path.split('.').reduce((o, k) => (o == null || !hasOwn(Object(o), k) ? undefined : o[k]), obj);
 
 defineNode({
   type: 'data.set', name: 'Edit Fields', group: 'data', icon: '✏️',
@@ -238,9 +256,9 @@ defineNode({
     { name: 'fields', label: 'Fields', type: 'keyvalue', default: [{ name: 'field', value: '' }] },
     { name: 'keepOthers', label: 'Keep other fields', type: 'boolean', default: true },
   ],
-  executeItem(ctx, item, i) {
+  async executeItem(ctx, item, i) {
     const out = ctx.rawParam('keepOthers') ? structuredClone(item.json) : {};
-    for (const f of ctx.param('fields', i) ?? []) if (f.name) setPath(out, f.name, f.value);
+    for (const f of (await ctx.param('fields', i)) ?? []) if (f.name) setPath(out, f.name, f.value);
     return out;
   },
 });
@@ -262,14 +280,14 @@ defineNode({
     const nodesData = {};
     if (ctx.rawParam('mode') === 'eachItem') {
       const out = [];
-      inputs[0].forEach((item, i) => {
-        const { result, logs } = runCode(code, { $json: item.json, $itemIndex: i, $input: { all: inputs[0].map((x) => x.json) } }, { sandbox: ctx.sandbox });
+      for (let i = 0; i < inputs[0].length; i += 1) {
+        const { result, logs } = await runCode(code, { $json: inputs[0][i].json, $itemIndex: i, $input: { all: inputs[0].map((x) => x.json) } }, { sandbox: ctx.sandbox });
         logs.forEach((l) => ctx.log(l));
         if (result !== null && result !== undefined) out.push({ json: unwrap(result) });
-      });
+      }
       return [out];
     }
-    const { result, logs } = runCode(code, { items: inputs[0].map((i) => i.json), $input: { all: inputs[0].map((i) => i.json) }, $node: nodesData }, { sandbox: ctx.sandbox });
+    const { result, logs } = await runCode(code, { items: inputs[0].map((i) => i.json), $input: { all: inputs[0].map((i) => i.json) }, $node: nodesData }, { sandbox: ctx.sandbox });
     logs.forEach((l) => ctx.log(l));
     if (result === null || result === undefined) return [[]];
     return [(Array.isArray(result) ? result : [result]).map((r) => ({ json: unwrap(r) }))];

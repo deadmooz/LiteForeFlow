@@ -1,0 +1,21 @@
+import { exec as e } from 'node:child_process'; import { promisify } from 'node:util';
+import { boot, client, mkWf, webhook, N, chain, set, sleep, uniq } from './lib.mjs';
+const exec = promisify(e);
+const run = uniq();
+const s = await boot('rr', { DATABASE_URL: process.env.TEST_DATABASE_URL, PG_SCHEMA: `rr_${run}`, REDIS_URL: process.env.TEST_REDIS_URL, QUEUE_NAME: `rr-${run}` });
+const u = await client(s.base).user();
+const p = `rr-${run}`;
+const wf = await mkWf(u, 'rr', [webhook('t', p, { respond: 'lastNode' }), set('s', { ok: '{{ 1 }}' })], chain('t', 's'));
+await u.post(`/api/workflows/${wf.id}/activate`, {});
+const call = (ms) => fetch(`${s.base}/webhook/${p}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(ms) }).then((r) => r.status).catch((x) => `no answer (${x.name})`);
+console.log('before outage      :', await call(5000));
+await exec(process.env.REDIS_STOP_CMD); await sleep(1500);
+const hung = call(40000);                       // a caller that waits patiently
+console.log('during outage (4s) :', await call(4000));
+console.log('API reads          :', (await u.get('/api/workflows')).status);
+await exec(process.env.REDIS_START_CMD); const t0 = Date.now();
+console.log('patient caller got :', await hung, `(${Math.round((Date.now() - t0) / 1000)} s after Redis returned)`);
+console.log('after recovery     :', await call(8000));
+const ex = (await u.get(`/api/executions?workflowId=${wf.id}`)).data.map((x) => x.status);
+console.log('execution statuses :', JSON.stringify(ex));
+await s.stop(); process.exit(0);

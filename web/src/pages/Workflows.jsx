@@ -53,11 +53,11 @@ export default function Workflows() {
           <tbody>
             {list.map((w) => (
               <tr key={w.id}>
-                <td><Link to={`/workflows/${w.id}`}><b>{w.name}</b></Link></td>
-                <td>{[...new Set(w.triggers.map((t) => TRIGGER_LABEL[t] ?? t))].join(', ') || '—'}</td>
-                <td>{w.nodeCount}</td>
-                <td className="muted">{fmtDate(w.updatedAt)}</td>
-                <td>
+                <td data-label="Name"><Link to={`/workflows/${w.id}`}><b>{w.name}</b></Link></td>
+                <td data-label="Trigger">{[...new Set(w.triggers.map((t) => TRIGGER_LABEL[t] ?? t))].join(', ') || '—'}</td>
+                <td data-label="Nodes">{w.nodeCount}</td>
+                <td className="muted" data-label="Updated">{fmtDate(w.updatedAt)}</td>
+                <td data-label="Active">
                   <label className="switch" aria-label={`Toggle ${w.name}`}>
                     <input type="checkbox" checked={w.active} onChange={() => act(() => api(`/workflows/${w.id}/${w.active ? 'deactivate' : 'activate'}`, { method: 'POST' }))} />
                     <span>{w.active ? 'On' : 'Off'}</span>

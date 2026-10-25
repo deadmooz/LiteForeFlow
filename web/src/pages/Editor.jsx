@@ -84,6 +84,7 @@ function EditorInner() {
   const [results, setResults] = useState({}); // nodeId -> result from last run
   const [lastRun, setLastRun] = useState(null);
   const [search, setSearch] = useState('');
+  const [drawer, setDrawer] = useState(null); // 'palette' | 'panel' | null — only used on narrow screens
 
   const typeMap = useMemo(() => Object.fromEntries(types.map((t) => [t.type, t])), [types]);
 
@@ -165,6 +166,7 @@ function EditorInner() {
     }
     setSelectedId(node.id);
     setTab('params');
+    setDrawer('panel');
     markDirty();
   };
 
@@ -263,6 +265,8 @@ function EditorInner() {
           onChange={(e) => { setMeta({ ...meta, name: e.target.value }); markDirty(); }}
         />
         {dirty && <span className="muted small">Unsaved changes</span>}
+        <button className="mobile-only" onClick={() => setDrawer((d) => (d === 'palette' ? null : 'palette'))}>＋ Nodes</button>
+        <button className="mobile-only" onClick={() => setDrawer((d) => (d === 'panel' ? null : 'panel'))}>Settings</button>
         <div className="spacer" />
         {message && <span className={message.kind === 'error' ? 'error inline-msg' : 'ok inline-msg'} role="status">{message.text}</span>}
         <button onClick={save} disabled={!!busy || !dirty}>{busy === 'save' ? 'Saving…' : 'Save'}</button>
@@ -282,7 +286,7 @@ function EditorInner() {
       )}
 
       <div className="editor-body">
-        <aside className="palette">
+        <aside className={`palette ${drawer === 'palette' ? 'open' : ''}`}>
           <input placeholder="Search nodes…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search nodes" />
           {GROUPS.map(([g, label]) => {
             const items = filtered.filter((t) => t.group === g);
@@ -310,8 +314,8 @@ function EditorInner() {
             onNodesChange={(c) => { onNodesChange(c); if (c.some((x) => x.type === 'position' && x.dragging === false)) markDirty(); if (c.some((x) => x.type === 'remove')) markDirty(); }}
             onEdgesChange={(c) => { onEdgesChange(c); if (c.some((x) => x.type === 'remove')) markDirty(); }}
             onConnect={onConnect}
-            onNodeClick={(_, n) => { setSelectedId(n.id); }}
-            onPaneClick={() => setSelectedId(null)}
+            onNodeClick={(_, n) => { setSelectedId(n.id); setDrawer('panel'); }}
+            onPaneClick={() => { setSelectedId(null); setDrawer(null); }}
             deleteKeyCode={['Backspace', 'Delete']}
             fitView proOptions={{ hideAttribution: true }}
           >
@@ -328,7 +332,7 @@ function EditorInner() {
           )}
         </div>
 
-        <aside className="panel">
+        <aside className={`panel ${drawer === 'panel' ? 'open' : ''}`}>
           {selected ? (
             <>
               <div className="panel-head">

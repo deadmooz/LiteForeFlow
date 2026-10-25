@@ -9,3 +9,4 @@ dist
 *.stale*
 coverage
 .github\workflows
+server/test/qa/*-results.json

@@ -83,11 +83,19 @@ export async function runWorkflow(opts) {
   const results = {};
   const outputs = {};
   const startedAt = new Date().toISOString();
-  const deadline = Date.now() + clamp(settings.timeoutSec, 1, 3600) * 1000;
+  const timeoutMs = clamp(settings.timeoutSec, 1, 3600) * 1000;
   let lastOutput = [];
   let error = null;
 
+  // One abort signal per run: it fires when the workflow timeout elapses, even in the middle of a slow node.
+  const abort = new AbortController();
+  const timeoutError = new Error(`Workflow timed out after ${settings.timeoutSec}s`);
+  const timer = setTimeout(() => abort.abort(timeoutError), timeoutMs);
+  const timedOut = new Promise((_, reject) => abort.signal.addEventListener('abort', () => reject(timeoutError), { once: true }));
+  timedOut.catch(() => {}); // never an unhandled rejection when nobody is racing it
+
   const finish = (status) => {
+    clearTimeout(timer);
     for (const [id, r] of Object.entries(results)) r.name = byId.get(id)?.name;
     return { status, error, results, lastOutput, staticData, startedAt, finishedAt: new Date().toISOString() };
   };
@@ -125,7 +133,7 @@ export async function runWorkflow(opts) {
     const node = byId.get(id);
     const type = getNodeType(node.type);
     try {
-      if (Date.now() > deadline) throw new Error(`Workflow timed out after ${settings.timeoutSec}s`);
+      if (abort.signal.aborted) throw timeoutError;
       if (!type) throw new Error(`Unknown node type ${node.type}`);
 
       const inputs = Array.from({ length: type.inputs || 1 }, () => []);
@@ -174,12 +182,12 @@ export async function runWorkflow(opts) {
       };
 
       const ctx = {
-        node, inputs, staticData, workspaceId, depth, sandbox,
+        node, inputs, staticData, workspaceId, depth, sandbox, signal: abort.signal,
         workflow: { id: workflow.id, name: workflow.name },
         rawParam: (name) => params[name],
         param: (name, i = 0) => resolverFor(i).resolve(params[name]),
         /** Parses a JSON-typed parameter, resolving {{ expressions }} (inside or outside of strings). */
-        jsonParam: (name, i = 0) => {
+        jsonParam: async (name, i = 0) => {
           const raw = params[name];
           if (raw === undefined || raw === null || raw === '') return undefined;
           const r = resolverFor(i);
@@ -187,7 +195,7 @@ export async function runWorkflow(opts) {
           let parsed;
           try { parsed = JSON.parse(raw); } catch { parsed = undefined; }
           if (parsed !== undefined) return r.resolve(parsed);
-          const resolved = r.resolve(raw);
+          const resolved = await r.resolve(raw);
           if (typeof resolved !== 'string') return resolved;
           try { return JSON.parse(resolved); } catch { throw new Error(`"${name}" is not valid JSON`); }
         },
@@ -209,12 +217,15 @@ export async function runWorkflow(opts) {
       while (tries < maxTries) {
         tries += 1;
         try {
-          out = await executeNode(type, ctx, inputs);
+          const attempt = executeNode(type, ctx, inputs);
+          attempt.catch(() => {}); // if the timeout wins the race, the abandoned attempt must not raise an unhandled rejection
+          out = await Promise.race([attempt, timedOut]);
           lastErr = null;
           break;
         } catch (e) {
           lastErr = e;
-          if (tries < maxTries) await sleep(waitMs);
+          if (abort.signal.aborted) break; // out of time: do not retry
+          if (tries < maxTries) await Promise.race([sleep(waitMs), timedOut]).catch(() => {});
         }
       }
       sandbox.dispose();

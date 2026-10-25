@@ -24,7 +24,7 @@ defineNode({
     const { token } = await ctx.credential();
     const res = await httpRequest({
       method: 'POST', url: 'https://slack.com/api/chat.postMessage', headers: { authorization: `Bearer ${token}` },
-      body: { channel: ctx.param('channel', i), text: ctx.param('text', i) },
+      body: { channel: (await ctx.param('channel', i)), text: (await ctx.param('text', i)) },
     });
     if (!res.data.ok) throw new Error(`Slack error: ${res.data.error}`);
     return { ok: true, channel: res.data.channel, ts: res.data.ts };
@@ -47,7 +47,7 @@ defineNode({
     try {
       const res = await httpRequest({
         method: 'POST', url: `https://api.telegram.org/bot${token}/sendMessage`,
-        body: { chat_id: ctx.param('chatId', i), text: ctx.param('text', i), ...(pm ? { parse_mode: pm } : {}) },
+        body: { chat_id: (await ctx.param('chatId', i)), text: (await ctx.param('text', i)), ...(pm ? { parse_mode: pm } : {}) },
       });
       return { ok: true, messageId: res.data.result?.message_id };
     } catch (e) { return apiError(e, (d) => d.description && `Telegram error: ${d.description}`); }
@@ -65,10 +65,10 @@ defineNode({
   ],
   async executeItem(ctx, item, i) {
     const { url } = await ctx.credential();
-    const u = ctx.param('username', i);
+    const u = (await ctx.param('username', i));
     const res = await httpRequest({
       method: 'POST', url: `${url}${url.includes('?') ? '&' : '?'}wait=true`,
-      body: { content: ctx.param('content', i), ...(u ? { username: u } : {}) },
+      body: { content: (await ctx.param('content', i)), ...(u ? { username: u } : {}) },
     });
     return { ok: true, id: res.data?.id };
   },
@@ -90,18 +90,18 @@ defineNode({
   ],
   async executeItem(ctx, item, i) {
     const { token } = await ctx.credential();
-    const db = ctx.param('databaseId', i);
+    const db = (await ctx.param('databaseId', i));
     try {
       if (ctx.rawParam('operation') === 'queryDatabase') {
-        const filter = ctx.jsonParam('filter', i);
+        const filter = (await ctx.jsonParam('filter', i));
         const res = await httpRequest({
           method: 'POST', url: `https://api.notion.com/v1/databases/${db}/query`, headers: notionHeaders(token), body: filter ? { filter } : {},
         });
         return res.data.results.map((p) => ({ id: p.id, url: p.url, properties: p.properties }));
       }
       const properties = {
-        ...(ctx.jsonParam('properties', i) ?? {}),
-        [ctx.rawParam('titleProperty') || 'Name']: { title: [{ text: { content: String(ctx.param('title', i) ?? '') } }] },
+        ...((await ctx.jsonParam('properties', i)) ?? {}),
+        [ctx.rawParam('titleProperty') || 'Name']: { title: [{ text: { content: String((await ctx.param('title', i)) ?? '') } }] },
       };
       const res = await httpRequest({
         method: 'POST', url: 'https://api.notion.com/v1/pages', headers: notionHeaders(token),
@@ -127,14 +127,14 @@ defineNode({
   ],
   async executeItem(ctx, item, i) {
     const { token } = await ctx.credential();
-    const url = `https://api.airtable.com/v0/${ctx.param('baseId', i)}/${encodeURIComponent(ctx.param('table', i))}`;
+    const url = `https://api.airtable.com/v0/${(await ctx.param('baseId', i))}/${encodeURIComponent((await ctx.param('table', i)))}`;
     const headers = { authorization: `Bearer ${token}` };
     try {
       if (ctx.rawParam('operation') === 'listRecords') {
-        const res = await httpRequest({ url, headers, query: { filterByFormula: ctx.param('filterByFormula', i) || undefined, maxRecords: ctx.param('maxRecords', i) } });
+        const res = await httpRequest({ url, headers, query: { filterByFormula: (await ctx.param('filterByFormula', i)) || undefined, maxRecords: (await ctx.param('maxRecords', i)) } });
         return res.data.records.map((r) => ({ id: r.id, ...r.fields }));
       }
-      const res = await httpRequest({ method: 'POST', url, headers, body: { fields: ctx.jsonParam('fields', i) ?? {}, typecast: true } });
+      const res = await httpRequest({ method: 'POST', url, headers, body: { fields: (await ctx.jsonParam('fields', i)) ?? {}, typecast: true } });
       return { id: res.data.id, ...res.data.fields };
     } catch (e) { return apiError(e, (d) => d.error?.message && `Airtable error: ${d.error.message}`); }
   },
@@ -159,12 +159,12 @@ defineNode({
       if (op === 'createCustomer') {
         const res = await httpRequest({
           method: 'POST', url: 'https://api.stripe.com/v1/customers', headers, bodyType: 'form',
-          body: { email: ctx.param('email', i), name: ctx.param('name', i) },
+          body: { email: (await ctx.param('email', i)), name: (await ctx.param('name', i)) },
         });
         return res.data;
       }
       const path = op === 'listPayments' ? 'payment_intents' : 'customers';
-      const res = await httpRequest({ url: `https://api.stripe.com/v1/${path}`, headers, query: { limit: ctx.param('limit', i) } });
+      const res = await httpRequest({ url: `https://api.stripe.com/v1/${path}`, headers, query: { limit: (await ctx.param('limit', i)) } });
       return res.data.data;
     } catch (e) { return apiError(e, (d) => d.error?.message && `Stripe error: ${d.error.message}`); }
   },
@@ -189,11 +189,12 @@ defineNode({
       if (ctx.rawParam('operation') === 'searchContacts') {
         const res = await httpRequest({
           method: 'POST', url: 'https://api.hubapi.com/crm/v3/objects/contacts/search', headers,
-          body: { query: ctx.param('query', i), limit: 50 },
+          body: { query: (await ctx.param('query', i)), limit: 50 },
         });
         return res.data.results.map((r) => ({ id: r.id, ...r.properties }));
       }
-      const properties = Object.fromEntries(['email', 'firstname', 'lastname'].map((k) => [k, ctx.param(k, i)]).filter(([, v]) => v));
+      const properties = {};
+      for (const k of ['email', 'firstname', 'lastname']) { const v = await ctx.param(k, i); if (v) properties[k] = v; }
       const res = await httpRequest({ method: 'POST', url: 'https://api.hubapi.com/crm/v3/objects/contacts', headers, body: { properties } });
       return { id: res.data.id, ...res.data.properties };
     } catch (e) { return apiError(e, (d) => d.message && `HubSpot error: ${d.message}`); }
@@ -220,7 +221,7 @@ defineNode({
     try {
       const out = [];
       for (let i = 0; i < inputs[0].length; i += 1) {
-        const params = ctx.jsonParam('params', i) ?? [];
+        const params = (await ctx.jsonParam('params', i)) ?? [];
         const r = await client.query(ctx.rawParam('query'), params);
         if (r.rows.length) out.push(...r.rows.map((row) => ({ json: row })));
         else out.push({ json: { rowCount: r.rowCount } });
@@ -251,8 +252,8 @@ defineNode({
     const out = [];
     for (let i = 0; i < inputs[0].length; i += 1) {
       const info = await transport.sendMail({
-        from: c.from, to: ctx.param('to', i), subject: ctx.param('subject', i),
-        text: ctx.param('text', i) || undefined, html: ctx.param('html', i) || undefined,
+        from: c.from, to: (await ctx.param('to', i)), subject: (await ctx.param('subject', i)),
+        text: (await ctx.param('text', i)) || undefined, html: (await ctx.param('html', i)) || undefined,
       });
       out.push({ json: { messageId: info.messageId, accepted: info.accepted } });
     }
@@ -294,14 +295,14 @@ defineNode({
     const op = ctx.rawParam('operation');
     const token = await googleToken(json, 'https://www.googleapis.com/auth/spreadsheets');
     const headers = { authorization: `Bearer ${token}` };
-    const base = `https://sheets.googleapis.com/v4/spreadsheets/${ctx.param('spreadsheetId', i)}/values/${encodeURIComponent(ctx.param('range', i))}`;
+    const base = `https://sheets.googleapis.com/v4/spreadsheets/${(await ctx.param('spreadsheetId', i))}/values/${encodeURIComponent((await ctx.param('range', i)))}`;
     try {
       if (op === 'getRows') {
         const res = await httpRequest({ url: base, headers });
         const [head = [], ...rows] = res.data.values ?? [];
         return rows.map((r) => Object.fromEntries(head.map((h, idx) => [h, r[idx] ?? ''])));
       }
-      const values = ctx.jsonParam('values', i);
+      const values = (await ctx.jsonParam('values', i));
       if (!Array.isArray(values)) throw new Error('Row values must be a JSON array');
       const res = await httpRequest({
         method: 'POST', url: `${base}:append`, headers, query: { valueInputOption: 'USER_ENTERED' }, body: { values: [values] },

@@ -28,6 +28,14 @@ function boundResult(result) {
   return { ...result, lastOutput: (result.lastOutput ?? []).slice(0, 20), results: undefined, truncated: true };
 }
 
+const unavailable = (message) => Object.assign(new Error(message), { status: 503 });
+async function within(ms, message, fn) {
+  let timer;
+  try {
+    return await Promise.race([fn(), new Promise((_, reject) => { timer = setTimeout(() => reject(unavailable(message)), ms); })]);
+  } finally { clearTimeout(timer); }
+}
+
 /* ------------------------------------ memory ---------------------------------- */
 function createMemoryDriver() {
   let running = 0;
@@ -103,14 +111,13 @@ async function createBullDriver() {
 
   return {
     async enqueue(payload, { wait, jobId } = {}) {
-      const depth = await queue.getWaitingCount();
-      if (depth >= config.maxQueueDepth) {
-        const err = new Error('The execution queue is full, please retry shortly');
-        err.status = 503;
-        throw err;
-      }
-      const ev = wait ? await getEvents() : null; // subscribe before adding so the completion event cannot be missed
-      const job = await queue.add(payload.kind, payload, jobId ? { jobId } : undefined);
+      // While Redis is unreachable ioredis queues commands forever, so bound the time we are willing to wait and answer 503.
+      const { job, ev } = await within(config.queueEnqueueTimeoutMs, 'The execution queue is unavailable (cannot reach Redis); please retry shortly', async () => {
+        const depth = await queue.getWaitingCount();
+        if (depth >= config.maxQueueDepth) throw unavailable('The execution queue is full, please retry shortly');
+        const events = wait ? await getEvents() : null; // subscribe before adding so the completion event cannot be missed
+        return { ev: events, job: await queue.add(payload.kind, payload, jobId ? { jobId } : undefined) };
+      });
       if (!wait) return undefined;
       return job.waitUntilFinished(ev, WAIT_TIMEOUT_MS);
     },

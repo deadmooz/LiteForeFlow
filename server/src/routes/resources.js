@@ -7,7 +7,7 @@ import { credentialTypes, getCredentialType, validateCredentialData } from '../c
 import { listNodeTypes } from '../nodes/index.js';
 import { templates, getTemplate } from '../templates.js';
 import { convertN8nWorkflow } from '../importer.js';
-import { createWorkflow } from './workflows.js';
+import { createWorkflow, checkDefinition } from './workflows.js';
 import { getUsage, plans, invalidatePlan } from '../plans.js';
 import { config } from '../config.js';
 import { parseStored } from '../packing.js';
@@ -68,8 +68,10 @@ credentialsRouter.delete('/:id', async (req, res) => {
 export const executionsRouter = express.Router();
 
 executionsRouter.get('/', async (req, res) => {
-  const limit = Math.min(200, Number(req.query.limit) || 50);
-  const offset = Number(req.query.offset) || 0;
+  // Query strings are hostile input: always a whole number inside a sane range (floats/negatives break SQL engines differently).
+  const int = (v, def, min, max) => { const n = Math.floor(Number(v)); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : def; };
+  const limit = int(req.query.limit, 50, 1, 200);
+  const offset = int(req.query.offset, 0, 0, 1_000_000);
   const where = ['workspace_id = ?'];
   const args = [req.workspaceId];
   if (req.query.workflowId) { where.push('workflow_id = ?'); args.push(String(req.query.workflowId)); }
@@ -118,7 +120,7 @@ toolsRouter.post('/templates/:id/use', async (req, res) => {
 toolsRouter.post('/import/n8n', async (req, res) => {
   let converted;
   try { converted = convertN8nWorkflow(req.body?.workflow); } catch (e) { throw new HttpError(400, e.message); }
-  const wf = await createWorkflow(req.workspaceId, converted.name, converted.definition);
+  const wf = await createWorkflow(req.workspaceId, converted.name, checkDefinition(converted.definition)); // same limits as hand-built workflows
   res.status(201).json({ workflow: wf, report: converted.report });
 });
 

@@ -17,7 +17,7 @@ const summary = (row) => {
 };
 
 const MAX_NODES = 200;
-function checkDefinition(def) {
+export function checkDefinition(def) {
   if (!def || !Array.isArray(def.nodes) || !Array.isArray(def.connections)) throw new HttpError(400, 'definition must contain nodes[] and connections[]');
   if (def.nodes.length > MAX_NODES) throw new HttpError(400, `A workflow can have at most ${MAX_NODES} nodes`);
   return { nodes: def.nodes, connections: def.connections };

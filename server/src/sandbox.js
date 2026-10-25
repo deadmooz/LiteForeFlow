@@ -9,7 +9,10 @@ const ivm = () => (ivmModule ??= createRequire(import.meta.url)('isolated-vm'));
  *
  * Each isolate is a separate V8 heap with NO Node.js globals (no process, require, fetch, timers, Buffer)
  * and its own memory limit. Data crosses the boundary only as JSON strings, so no host object or
- * constructor is ever reachable from user code. Execution is wall-clock limited.
+ * constructor is ever reachable from user code.
+ *
+ * User code runs through isolated-vm's ASYNC API: it executes on isolated-vm's own thread pool with a
+ * wall-clock timeout, so a runaway script never blocks the Node event loop (the API stays responsive).
  *
  * One Sandbox is created per node run; it lazily owns one isolate, and every item gets a fresh,
  * cheap context inside it. Always call dispose() when the node run is over.
@@ -59,16 +62,16 @@ export class Sandbox {
     const ctx = iso.createContextSync();
     try {
       ctx.global.setSync('__raw', JSON.stringify(data));
-      iso.compileScriptSync(BOOTSTRAP).runSync(ctx, { timeout: 1000 });
+      iso.compileScriptSync(BOOTSTRAP).runSync(ctx, { timeout: 1000 }); // trusted, bounded setup code
     } catch (e) {
       ctx.release();
       throw new SandboxError(friendly(e));
     }
     return {
-      /** Runs source that evaluates to a string; returns that string. */
-      run: (source, timeoutMs) => {
+      /** Runs untrusted source that evaluates to a string, off the event loop. Resolves to that string. */
+      run: async (source, timeoutMs) => {
         try {
-          const out = iso.compileScriptSync(source).runSync(ctx, { timeout: timeoutMs });
+          const out = await iso.compileScriptSync(source).run(ctx, { timeout: timeoutMs });
           if (typeof out === 'string' && out.length > MAX_RESULT_CHARS) throw new Error('result is too large');
           return out;
         } catch (e) {

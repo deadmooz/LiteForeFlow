@@ -105,11 +105,18 @@ async function createPostgres() {
     if (!/^[a-z_][a-z0-9_]*$/i.test(schema)) throw new Error('PG_SCHEMA must be a simple identifier');
     const boot = new pg.Client({ connectionString: config.databaseUrl });
     await boot.connect();
-    await boot.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
+    try {
+      await boot.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
+    } catch (e) {
+      // Several processes starting together can race on CREATE SCHEMA IF NOT EXISTS (unique violation / duplicate schema): the loser is fine.
+      if (e.code !== '23505' && e.code !== '42P06') throw e;
+    }
     await boot.end();
   }
   const pool = new pg.Pool({
     connectionString: config.databaseUrl, max: config.pgPoolSize,
+    // A dead or unreachable database must produce a fast error, not requests that wait forever.
+    connectionTimeoutMillis: config.pgConnectTimeoutMs, query_timeout: config.pgQueryTimeoutMs, idleTimeoutMillis: 30_000,
     ...(schema ? { options: `-c search_path=${schema}` } : {}),
   });
   pool.on('error', (e) => console.error('[pg] idle client error:', e.message));

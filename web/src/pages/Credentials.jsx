@@ -30,7 +30,7 @@ export default function Credentials() {
           <tbody>
             {list.map((c) => (
               <tr key={c.id}>
-                <td><b>{c.name}</b></td><td>{typeName(c.type)}</td><td className="muted">{fmtDate(c.createdAt)}</td>
+                <td data-label="Name"><b>{c.name}</b></td><td data-label="Type">{typeName(c.type)}</td><td className="muted" data-label="Created">{fmtDate(c.createdAt)}</td>
                 <td className="actions">
                   <button className="link" onClick={() => edit(c)}>Edit</button>
                   <button className="link danger" onClick={async () => { if (window.confirm(`Delete credential "${c.name}"? Workflows using it will fail until you pick another.`)) { await api(`/credentials/${c.id}`, { method: 'DELETE' }); load(); } }}>Delete</button>

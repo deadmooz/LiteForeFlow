@@ -37,12 +37,12 @@ export default function Executions() {
           <tbody>
             {list.map((e) => (
               <tr key={e.id} className="clickable" onClick={() => setOpenId(e.id)}>
-                <td><Link to={`/workflows/${e.workflowId}`} onClick={(ev) => ev.stopPropagation()}>{e.workflowName}</Link></td>
-                <td><StatusBadge status={e.status} /></td>
-                <td>{e.mode}</td>
-                <td className="muted">{fmtDate(e.startedAt)}</td>
-                <td>{fmtDuration(e.startedAt, e.finishedAt)}</td>
-                <td className="muted ellipsis">{e.error?.message}</td>
+                <td data-label="Workflow"><Link to={`/workflows/${e.workflowId}`} onClick={(ev) => ev.stopPropagation()}>{e.workflowName}</Link></td>
+                <td data-label="Status"><StatusBadge status={e.status} /></td>
+                <td data-label="Mode">{e.mode}</td>
+                <td className="muted" data-label="Started">{fmtDate(e.startedAt)}</td>
+                <td data-label="Duration">{fmtDuration(e.startedAt, e.finishedAt)}</td>
+                <td className="muted ellipsis" data-label="Error">{e.error?.message}</td>
               </tr>
             ))}
           </tbody>

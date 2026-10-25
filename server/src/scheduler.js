@@ -56,6 +56,10 @@ export async function activateWorkflow(workflow) {
   const { default: cron } = await import('node-cron');
   const issues = validateWorkflow(workflow.definition);
   if (issues.length) throw new ActivationError(`Cannot activate: ${issues[0]}`);
+  const startable = workflow.definition.nodes.some((n) => !n.disabled && ['trigger.webhook', 'trigger.cron', 'trigger.rss'].includes(n.type));
+  if (!startable) {
+    throw new ActivationError("Nothing can start this workflow automatically. Add a Webhook, Schedule or RSS trigger. (Manual workflows are started with Run; Error workflows are linked from another workflow's settings.)");
+  }
   await assertCanActivate(workflow.workspaceId, workflow.active);
 
   const webhooks = [];

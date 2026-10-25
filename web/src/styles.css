@@ -1,6 +1,6 @@
 :root {
   --bg: #f6f7f9; --surface: #ffffff; --surface-2: #f0f2f5; --border: #dfe3e8; --text: #1b2230; --muted: #6a7487;
-  --primary: #5b5bf0; --primary-text: #ffffff; --ok: #14804a; --ok-bg: #e3f6ec; --err: #b42318; --err-bg: #fdecea;
+  --primary: #5b5bf0; --primary-text: #ffffff; --ok: #0f6b3c; --ok-bg: #e3f6ec; --err: #b42318; --err-bg: #fdecea;
   --warn: #92600a; --warn-bg: #fff4dc; --grid: #d6dae1; --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 14px rgba(16, 24, 40, .06);
 }
 @media (prefers-color-scheme: dark) {
@@ -116,4 +116,27 @@ pre.json { margin: 0; padding: 10px; background: var(--surface-2); border-radius
   .sidebar { width: 64px; padding: 12px 6px; } .sidebar .brand { font-size: 0; } .sidebar .brand::first-letter { font-size: 20px; }
   .sidebar nav a { font-size: 11px; text-align: center; padding: 6px 2px; } .sidebar-foot { display: none; }
   .palette { width: 150px; } .panel { width: 280px; }
+}
+
+/* ---- small screens: tables become stacked cards, editor side panels become drawers ---- */
+.mobile-only { display: none; }
+@media (max-width: 720px) {
+  .table, .table tbody, .table tr, .table td { display: block; width: 100%; }
+  .table thead { display: none; }
+  .table tr { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .table td { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0; border: none; text-align: right; }
+  .table td::before { content: attr(data-label); color: var(--muted); font-size: 12px; text-align: left; flex: none; }
+  .table .actions { justify-content: flex-end; }
+  .table .ellipsis { max-width: none; white-space: normal; }
+  .page { padding: 16px 14px 32px; }
+  .title-input { width: 100% !important; }
+}
+@media (max-width: 900px) {
+  .mobile-only { display: inline-flex; }
+  .editor-body { position: relative; overflow: hidden; } /* clips the closed drawers so they never peek over the sidebar */
+  .palette, .panel { position: absolute; top: 0; bottom: 0; z-index: 20; width: min(300px, 88vw); transition: transform .18s ease; box-shadow: var(--shadow); }
+  .palette { left: 0; transform: translateX(-105%); }
+  .panel { right: 0; transform: translateX(105%); }
+  .palette.open, .panel.open { transform: none; }
+  .canvas { flex: 1 1 100%; min-width: 0; }
 }

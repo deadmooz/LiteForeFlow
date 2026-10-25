@@ -1,7 +1,7 @@
 import os from 'node:os';
 import { all, get, run, uid, now } from './db.js';
 import { runWorkflow } from './engine.js';
-import { reserveRun, getPlan } from './plans.js';
+import { reserveRun, refundRun, getPlan } from './plans.js';
 import { enqueue } from './queue.js';
 import { config } from './config.js';
 import { pack } from './packing.js';
@@ -120,6 +120,8 @@ export async function submitExecution(opts, { wait = false } = {}) {
     return wait ? { ...result, executionId } : { executionId };
   } catch (e) {
     await failExecution(executionId, `Execution could not be completed: ${e.message}`).catch(() => {});
+    // The run never started, so it must not eat the customer's monthly quota.
+    if (mode !== 'subworkflow' && mode !== 'error' && e.status === 503) await refundRun(workflow.workspaceId).catch(() => {});
     throw e;
   }
 }

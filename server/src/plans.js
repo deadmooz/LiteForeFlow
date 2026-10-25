@@ -50,6 +50,11 @@ export async function reserveRun(workspaceId) {
   }
 }
 
+/** Gives back a reservation when the run never started (e.g. the queue refused it). */
+export async function refundRun(workspaceId) {
+  await run('UPDATE usage SET runs = runs - 1 WHERE workspace_id = ? AND month = ? AND runs > 0', workspaceId, currentMonth());
+}
+
 export async function getUsage(workspaceId) {
   const plan = await getPlan(workspaceId);
   const runs = (await get('SELECT runs FROM usage WHERE workspace_id = ? AND month = ?', workspaceId, currentMonth()))?.runs ?? 0;

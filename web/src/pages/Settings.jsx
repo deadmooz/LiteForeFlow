@@ -37,6 +37,18 @@ export default function Settings() {
     }
   };
 
+  const removeMember = async (m) => {
+    const leaving = m.id === me.user.id;
+    if (!window.confirm(leaving ? 'Leave this workspace? You will lose access to its workflows.' : `Remove ${m.name} from this workspace?`)) return;
+    setMsg(null);
+    try {
+      await api(`/workspace/members/${m.id}`, { method: 'DELETE' });
+      if (leaving) { window.location.assign('/'); return; }
+      setMsg({ kind: 'ok', text: 'Member removed' });
+      load();
+    } catch (err) { setMsg({ kind: 'error', text: err.message }); }
+  };
+
   const invite = async (e) => {
     e.preventDefault();
     setMsg(null);
@@ -79,7 +91,14 @@ export default function Settings() {
 
       <h3>Members</h3>
       <div className="card stack">
-        <ul className="plain">{members.map((m) => <li key={m.id}><b>{m.name}</b> <span className="muted">{m.email} · {m.role}</span></li>)}</ul>
+        <ul className="plain">{members.map((m) => (
+          <li key={m.id} className="row between">
+            <span><b>{m.name}</b> <span className="muted">{m.email} · {m.role}</span></span>
+            {m.role !== 'owner' && (isOwner || m.id === me.user.id) && (
+              <button className="link danger" onClick={() => removeMember(m)}>{m.id === me.user.id ? 'Leave' : 'Remove'}</button>
+            )}
+          </li>
+        ))}</ul>
         {isOwner && (
           <form className="row gap" onSubmit={invite}>
             <input type="email" required placeholder="teammate@company.com (must already have an account)" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Invite by email" />

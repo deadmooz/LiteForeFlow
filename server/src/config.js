@@ -12,6 +12,8 @@ export const config = {
   // Set DATABASE_URL for Postgres (required for multi-process); otherwise SQLite in DATA_DIR.
   databaseUrl: env.DATABASE_URL || '',
   pgSchema: env.PG_SCHEMA || '',
+  pgConnectTimeoutMs: Number(env.PG_CONNECT_TIMEOUT_MS) || 5000,
+  pgQueryTimeoutMs: Number(env.PG_QUERY_TIMEOUT_MS) || 30_000,
   pgPoolSize: Number(env.PG_POOL_SIZE) || 10,
   // Set REDIS_URL to run executions through BullMQ workers; otherwise an in-process queue is used.
   redisUrl: env.REDIS_URL || '',
@@ -19,6 +21,7 @@ export const config = {
   // A running job's lock is renewed automatically; if its worker dies the job is declared failed after ~lock + stalled interval.
   workerLockMs: Number(env.WORKER_LOCK_MS) || 60_000,
   workerStalledMs: Number(env.WORKER_STALLED_INTERVAL_MS) || 15_000,
+  queueEnqueueTimeoutMs: Number(env.QUEUE_ENQUEUE_TIMEOUT_MS) || 5000,
   maxQueueDepth: Number(env.MAX_QUEUE_DEPTH) || 10000,
   // all = API + worker + scheduler in one process | api = HTTP + enqueue + schedules | worker = executes jobs only
   role: env.LITEFOREFLOW_ROLE || 'all',

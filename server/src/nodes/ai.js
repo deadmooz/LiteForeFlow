@@ -59,8 +59,8 @@ defineNode({
     const provider = ctx.rawParam('provider');
     const cred = await loadCredential(ctx.workspaceId, ctx.rawParam('credential'), CRED_BY_PROVIDER[provider]);
     const out = await complete({
-      provider, cred, model: ctx.param('model', i), system: ctx.param('system', i), prompt: ctx.param('prompt', i),
-      temperature: Number(ctx.param('temperature', i)), maxTokens: Number(ctx.param('maxTokens', i)) || 1024,
+      provider, cred, model: (await ctx.param('model', i)), system: (await ctx.param('system', i)), prompt: (await ctx.param('prompt', i)),
+      temperature: Number((await ctx.param('temperature', i))), maxTokens: Number((await ctx.param('maxTokens', i))) || 1024,
     });
     if (ctx.rawParam('parseJson')) {
       const m = out.text.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -87,7 +87,7 @@ const TOOLS = {
     schema: { type: 'object', properties: { expression: { type: 'string' } }, required: ['expression'] },
     run: async ({ expression }) => {
       if (!/^[\d\s+\-*/().,%^e]+$/i.test(expression)) throw new Error('Only numbers and + - * / % ( ) are allowed');
-      return String(runCode(`return (${expression.replace(/\^/g, '**')});`, {}, { timeoutMs: 500 }).result);
+      return String((await runCode(`return (${expression.replace(/\^/g, '**')});`, {}, { timeoutMs: 500 })).result);
     },
   },
   current_time: {
@@ -163,11 +163,11 @@ defineNode({
   async executeItem(ctx, item, i) {
     const provider = ctx.rawParam('provider');
     const cred = await loadCredential(ctx.workspaceId, ctx.rawParam('credential'), CRED_BY_PROVIDER[provider]);
-    const tools = ctx.jsonParam('tools', i) ?? [];
+    const tools = (await ctx.jsonParam('tools', i)) ?? [];
     if (!Array.isArray(tools)) throw new Error('Tools must be a JSON array of tool names');
     return runAgent({
-      provider, cred, model: ctx.param('model', i), system: ctx.param('system', i), prompt: ctx.param('prompt', i),
-      tools, maxSteps: Math.min(10, Math.max(1, Number(ctx.rawParam('maxSteps')) || 5)), temperature: Number(ctx.param('temperature', i)),
+      provider, cred, model: (await ctx.param('model', i)), system: (await ctx.param('system', i)), prompt: (await ctx.param('prompt', i)),
+      tools, maxSteps: Math.min(10, Math.max(1, Number(ctx.rawParam('maxSteps')) || 5)), temperature: Number((await ctx.param('temperature', i))),
     });
   },
 });

@@ -39,6 +39,8 @@ authRouter.post('/signup', rateLimit, async (req, res) => {
   const { email, password, name } = req.body ?? {};
   if (typeof email !== 'string' || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new HttpError(400, 'A valid email is required');
   if (typeof password !== 'string' || password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters');
+  // bcrypt only uses the first 72 bytes; refusing longer passwords stops two different passwords from being interchangeable.
+  if (Buffer.byteLength(password) > 72) throw new HttpError(400, 'Password must be at most 72 bytes long');
   const cleanEmail = email.trim().toLowerCase();
   if (await get('SELECT id FROM users WHERE email = ?', cleanEmail)) throw new HttpError(409, 'An account with this email already exists');
 
@@ -99,6 +101,17 @@ meRouter.get('/workspace/members', async (req, res) => {
     'SELECT u.id, u.email, u.name, m.role FROM members m JOIN users u ON u.id = m.user_id WHERE m.workspace_id = ? ORDER BY m.created_at',
     req.workspaceId,
   ));
+});
+
+/** Owner removes a member, or a member leaves. The owner can never be removed. */
+meRouter.delete('/workspace/members/:userId', async (req, res) => {
+  const target = await get('SELECT role FROM members WHERE workspace_id = ? AND user_id = ?', req.workspaceId, req.params.userId);
+  if (!target) throw new HttpError(404, 'Member not found');
+  const self = req.params.userId === req.user.id;
+  if (!self && req.role !== 'owner') throw new HttpError(403, 'Only the workspace owner can remove other members');
+  if (target.role === 'owner') throw new HttpError(400, 'The workspace owner cannot be removed');
+  await run('DELETE FROM members WHERE workspace_id = ? AND user_id = ?', req.workspaceId, req.params.userId);
+  res.status(204).end();
 });
 
 meRouter.post('/workspace/invite', async (req, res) => {

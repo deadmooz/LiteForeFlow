@@ -17,7 +17,18 @@ export function createApp() {
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
   app.use(cors());
-  app.use((req, res, next) => { res.set('x-content-type-options', 'nosniff'); next(); });
+  app.use((req, res, next) => {
+    res.set({
+      'x-content-type-options': 'nosniff',
+      'x-frame-options': 'DENY',
+      'referrer-policy': 'no-referrer',
+      'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+      // The editor is a same-origin SPA; inline styles are needed by the canvas library, inline scripts are not allowed.
+      'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+    });
+    if (req.secure || req.get('x-forwarded-proto') === 'https') res.set('strict-transport-security', 'max-age=15552000; includeSubDomains');
+    next();
+  });
 
   // Stripe needs the raw body for signature verification, so it is mounted before the JSON parser.
   app.use('/api/billing/webhook', stripeWebhookRouter);
