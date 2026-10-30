@@ -4,7 +4,11 @@ import path from 'node:path';
 import { config } from './config.js';
 
 function loadMasterSecret() {
-  if (process.env.LITEFOREFLOW_SECRET) return process.env.LITEFOREFLOW_SECRET;
+  if (process.env.LITEFOREFLOW_SECRET) {
+    // Accepted (changing it would lock existing credentials), but a guessable key protects nothing.
+    if (process.env.LITEFOREFLOW_SECRET.length < 16) console.warn('[security] LITEFOREFLOW_SECRET is very short. Use a long random value (openssl rand -hex 32); note that changing it makes saved credentials unreadable.');
+    return process.env.LITEFOREFLOW_SECRET;
+  }
   const file = path.join(config.dataDir, '.secret');
   if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8').trim();
   const secret = crypto.randomBytes(32).toString('hex');
