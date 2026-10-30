@@ -41,13 +41,10 @@ and put it behind HTTPS (for example Caddy or nginx). Do not expose it to the in
 
 ## Scaling up (optional): Postgres + Redis + several workers
 
-Only needed for many users or many runs per second. It needs a Postgres and a Redis server that you run yourself.
+This is what the **Docker edition** does out of the box: see [DOCKER.md](DOCKER.md). Without Docker you need a Postgres and a Redis
+server that you run yourself (the packages `pg`, `bullmq` and `ioredis` are already installed in this edition).
 
-```bash
-npm run scale-up            # installs the optional packages: pg, bullmq, ioredis
-```
-
-Then set `DATABASE_URL=postgres://user:pass@host:5432/dbname` (the database must be UTF8) and `REDIS_URL=redis://host:6379`.
+Set `DATABASE_URL=postgres://user:pass@host:5432/dbname` (the database must be UTF8) and `REDIS_URL=redis://host:6379`.
 Run one or more API processes and any number of workers:
 
 ```bash
@@ -91,7 +88,7 @@ npm test          # 15 integration tests, no extra services needed
 npm run qa        # ~200 black-box scenarios against freshly started servers (about 90 seconds)
 ```
 
-Tests for the Postgres/Redis mode need `npm run scale-up` plus running servers, and `TEST_DATABASE_URL` / `TEST_REDIS_URL` set.
+Tests for the Postgres/Redis mode need running Postgres and Redis servers and `TEST_DATABASE_URL` / `TEST_REDIS_URL` set; `npm run test:all` then also runs the multi-process worker and plugin tests.
 
 ## Known limits
 

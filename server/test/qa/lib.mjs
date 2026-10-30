@@ -41,7 +41,14 @@ export function summary() {
 
 /* ---------------------------------- servers ---------------------------------- */
 let nextPort = Number(process.env.QA_PORT_BASE) || 3300; // Windows reserves some port ranges (EACCES): override with QA_PORT_BASE
+// A server left over from an earlier run would answer /api/health and make the harness test the WRONG server.
+const portInUse = (port) => new Promise((resolve) => {
+  const s = net.connect({ port, host: '127.0.0.1' });
+  s.once('connect', () => { s.destroy(); resolve(true); });
+  s.once('error', () => resolve(false));
+});
 export async function boot(name, env = {}, { dataDir } = {}) {
+  while (await portInUse(nextPort)) nextPort += 1;
   const port = nextPort++;
   const dir = dataDir ?? fs.mkdtempSync(path.join(os.tmpdir(), `qa-${name}-`));
   const flags = ['--max-semi-space-size=2', '--max-old-space-size=192'];

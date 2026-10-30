@@ -1,79 +1,76 @@
-# LiteForeFlow
+# LiteForeFlow - Docker edition
 
 Build automations by drawing them: *"when a form is submitted, save it to a sheet and message me on Slack"*.
-A tiny, free, self-hosted alternative to n8n / Zapier. **No Docker, no database to set up, no accounts in the cloud** -
-everything runs on your own computer and stays there.
+A free, self-hosted alternative to n8n / Zapier, packaged to **run in Docker** with Postgres, a Redis queue and as many
+worker containers as you need.
 
-## Start it in 3 steps
+> **Looking for the no-Docker version?** That is the separate *Lite edition* (one folder, double-click to start).
+> This Docker edition has **every Lite feature** and adds the production pieces below.
 
-**1. Node.js (the engine that runs LiteForeFlow)** - you do not have to do anything. If it is missing, `start.bat` /
-`start.sh` offer to download a private copy (about 30 MB) into a `runtime` folder next to the app: no administrator
-rights, nothing else on your computer changes. Prefer your own install? Get the **LTS** from <https://nodejs.org>
-(it must be 22.13 or higher).
+## Start it (3 steps)
 
-**2. Download this project** (green *Code* button -> *Download ZIP* -> unzip it, or `git clone` it).
+**1. Install Docker** - [Docker Desktop](https://www.docker.com/products/docker-desktop/) on Windows/Mac, Docker Engine on Linux.
 
-**3. Start it** - pick whichever is easiest for you:
+**2. Create your settings file** (in this folder). Copy `.env.example` to `.env` and put a long random text after
+`LITEFOREFLOW_SECRET=` (it encrypts your saved passwords/API keys - **keep a copy of it**):
 
-| You use... | Do this |
-|---|---|
-| **Windows** | Double-click **`start.bat`** |
-| **Mac / Linux** | Open a terminal in the folder and run `./start.sh` (the first time: `chmod +x start.sh`) |
-| **Python** | `python run.py` |
-| **npm** | `npm install` once, then `npm start` |
+```bash
+openssl rand -hex 32      # prints a good value (on Windows PowerShell: -join ((1..64) | % { '{0:x}' -f (Get-Random -Max 16) }))
+```
 
-The first start installs a few small packages (about a minute, needs internet, only once). Then your browser opens at
-**http://localhost:3000**. Click **Create an account** (it is free and stays on your computer) and open **Templates**
-to try a ready-made automation.
+**3. Start everything**
 
-To stop it, press **Ctrl+C** in the window (or just close the window).
+```bash
+docker compose up -d --build --scale worker=2
+```
 
-## Using it
+Open **http://localhost:3000**, click **Create an account** (the first account is the owner) and try **Templates**.
+Stop with `docker compose down` (your data stays); `docker compose logs -f` shows what is happening.
 
-1. **Templates** - pick one and click *Use template*. 15 ready-made automations (alerts, reports, AI helpers...).
-2. **Build your own** - *Workflows -> New workflow*. Click a block on the left to add it; it connects itself to the block you selected.
-   Click a block to fill in its settings. Use `{{ $json.name }}` inside any text field to use data from the previous step.
-3. **Run** - press **Run** to try it on the spot; each block turns green (worked) or red (failed) and *Data* shows what went through.
-4. **Switch it on** - a workflow with a **Webhook** (runs when a URL is called), **Schedule** (runs on a timer) or **RSS** trigger
-   can be switched to *Active*; then it runs by itself while LiteForeFlow is running.
-5. **Credentials** - passwords and API keys for services like Slack are saved (encrypted) under *Credentials*, never inside workflows.
+## What you get (the same as the Lite edition)
 
-## Free AI on your own computer (Ollama)
+- **Visual editor** with 15 templates, friendly fields, a **schedule picker**, per-block *Data*, *Test this step*, n8n import
+- **Plugins**: Respond to Webhook, data tools (Filter, Sort, Remove Duplicates, Date & Time, Crypto, batches), a REST connector;
+  add your own - [docs/PLUGINS.md](docs/PLUGINS.md)
+- **Free local AI with Ollama**, plus OpenAI / Anthropic / any OpenAI-compatible API (LLM and AI Agent blocks)
+- **Triggers**: Webhook, Schedule, RSS, Error handler; HTTP, email, Postgres, Slack, Telegram, Discord, Notion, Airtable, Stripe, HubSpot, Sheets
+- **Safe by default**: encrypted credentials, sandboxed code, plan limits, security headers, private-network blocking
 
-1. Install [Ollama](https://ollama.com/download), then run `ollama pull llama3.2` once (a few GB download).
-2. In a workflow add an **LLM** or **AI Agent** block and set *Provider* to **ollama**. No account, no API key and no credential are needed;
-   leave *Model* empty for `llama3.2`, or choose any model you pulled from the list.
-   *Thinking* is **off** by default: many local models (qwen3, deepseek-r1) otherwise write minutes of private reasoning before a simple answer (measured: 124 s with thinking, 4.5 s without). Turn it on only for hard problems.
-3. Ollama runs on another computer? Add an **Ollama (local AI)** credential with its address, or set `OLLAMA_HOST` (see [docs/ADVANCED.md](docs/ADVANCED.md)).
+## What Docker adds
 
-## Plugins: add your own blocks
+| | Lite edition | Docker edition |
+|---|---|---|
+| Start | double-click / `npm start` | `docker compose up` |
+| Database | one SQLite file | **Postgres** |
+| Running workflows | inside the one process | **Redis queue + any number of worker containers** |
+| If something crashes | restart it | queued runs wait; a crashed worker's run is marked failed (never repeated) |
+| Several servers | no | yes (API + workers share Postgres and Redis) |
+| Code sandbox | strong, with a weaker automatic fallback | **strong only** (the container refuses to run without it) |
+| Private-network blocking | off | **on** (Ollama on your computer is still allowed) |
 
-LiteForeFlow comes with plugins for **Respond to Webhook**, **data tools** (Filter, Sort, Remove Duplicates, Date & Time, Crypto, batches) and a **REST connector** (GitHub, Trello, OpenWeather, Hacker News).  
-Open **Plugins** in the app to see or turn them off. To add your own, run `npm run plugin:new -- my-plugin`, edit the file it creates in `data/plugins`, and press *Reload*.
-Connecting a web service needs no code at all, just one small JSON file. Guide: [docs/PLUGINS.md](docs/PLUGINS.md).
+## Everyday things
 
-## Good to know
-
-- **It only runs while it is started.** Schedules and webhooks work while the window is open. Leave it running on a computer that stays on.
-- **Your data** (workflows, accounts, run history) lives in the `data` folder next to the app. Copy that folder to back it up or move to another computer.
-  Keep `data/.secret` with it - it is the key that unlocks your saved credentials.
-- **Updating:** download the new version, copy your old `data` folder into it, and start.
-- **Other people on your network** can use it too: they open `http://<your-computer-ip>:3000`. Only do this on a network you trust,
-  and read *Sharing it* in [docs/ADVANCED.md](docs/ADVANCED.md) first.
+- **More power:** `docker compose up -d --scale worker=4`
+- **Your own plugins:** drop a folder into `plugins-user/` - the API and every worker pick it up within seconds. Switching a plugin on/off on the *Plugins* page also reaches all workers.
+- **Ollama on your computer:** works out of the box (`OLLAMA_HOST=http://host.docker.internal:11434`). Ollama on another machine: set `OLLAMA_HOST` in `.env`.
+- **Backup:** Postgres (`docker compose exec postgres pg_dump -U liteforeflow liteforeflow > backup.sql`) **and** your `LITEFOREFLOW_SECRET`.
+- **Update:** pull the new code, then `docker compose up -d --build --scale worker=2`.
+- **Close registration** after you created your accounts: `ALLOW_SIGNUP=false` in `.env`, then `docker compose up -d`.
+- **Put it on the internet?** Only behind HTTPS (Caddy / nginx / Traefik). Read [docs/DOCKER.md](docs/DOCKER.md) first.
 
 ## Something went wrong?
 
 | You see | Do this |
 |---|---|
-| "needs Node.js" | Answer **Y** to download it. Said no, or it failed? Install the LTS from <https://nodejs.org>, then **close and reopen** the window |
-| Node.js too old | Answer **Y** and the launcher uses its own newer copy (your old one stays untouched) |
-| The install fails / is stuck | Check your internet connection, delete the `node_modules` folder, start again |
-| "Port 3000 is already in use" | LiteForeFlow picks the next free port automatically; or run `python run.py --port 3100` |
-| Browser did not open | Open the address printed in the window (http://localhost:3000) yourself |
-| Forgot your password | Your data is local: create a new account (or delete the `data` folder to start from scratch - this erases everything) |
-| A workflow fails with "No credential selected" | Open the failing block, choose a credential (or click **+ New**) |
+| `set LITEFOREFLOW_SECRET in .env` | Step 2 above: create `.env` and fill in the secret |
+| "port is already allocated" | Something else uses 3000: set `PORT=3100` in `.env`, run `docker compose up -d` again |
+| Page does not open | `docker compose ps` (everything should say *Up/healthy*), then `docker compose logs api` |
+| A run fails with "queue is unavailable" | Redis is down or restarting - wait a few seconds; `docker compose logs redis` |
+| "Could not reach Ollama" | Start Ollama on your computer. On Linux also start it with `OLLAMA_HOST=0.0.0.0` so containers can reach it |
+| Forgot the secret | Saved credentials cannot be read again; accounts and workflows still work - re-enter the credentials |
 
 ## More
 
-- Settings, scaling up to Postgres + Redis, adding your own integrations, limits and security notes: **[docs/ADVANCED.md](docs/ADVANCED.md)**
-- How it was tested: [QA_REPORT.md](QA_REPORT.md)
+- Docker details, settings table, scaling and the test commands: **[docs/DOCKER.md](docs/DOCKER.md)**
+- All settings, security notes and limits: [docs/ADVANCED.md](docs/ADVANCED.md)
+- Performance numbers: [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
