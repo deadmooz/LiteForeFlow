@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { defineNode, credentialProperty } from './registry.js';
 import { httpRequest, formEncode } from '../http.js';
+import { config } from '../config.js';
 
 /* Each integration is one declarative object. All of these call vendor REST APIs directly. */
 
@@ -76,35 +77,104 @@ defineNode({
 
 /* ----------------------------------- Notion ----------------------------------- */
 const notionHeaders = (token) => ({ authorization: `Bearer ${token}`, 'Notion-Version': '2022-06-28' });
+const notionTitle = (rich = []) => rich.map((t) => t.plain_text).join('') || '(untitled)';
+
+// Column types the editor can fill in with a plain input, and how each is sent to Notion.
+const NOTION_COLUMNS = {
+  rich_text: { input: 'string', send: (v) => ({ rich_text: [{ text: { content: String(v) } }] }) },
+  number: { input: 'number', send: (v) => ({ number: Number(v) }) },
+  select: { input: 'options', send: (v) => ({ select: { name: String(v) } }) },
+  status: { input: 'options', send: (v) => ({ status: { name: String(v) } }) },
+  multi_select: { input: 'tags', send: (v) => ({ multi_select: String(v).split(',').map((s) => s.trim()).filter(Boolean).map((name) => ({ name })) }) },
+  checkbox: { input: 'boolean', send: (v) => ({ checkbox: v === true || v === 'true' }) },
+  date: { input: 'date', send: (v) => ({ date: { start: String(v) } }) },
+  url: { input: 'string', send: (v) => ({ url: String(v) }) },
+  email: { input: 'string', send: (v) => ({ email: String(v) }) },
+  phone_number: { input: 'string', send: (v) => ({ phone_number: String(v) }) },
+};
+
+/** Accepts a database id the way people actually have it: with dashes, or a whole link copied from the browser. */
+export function cleanNotionId(value) {
+  const s = String(value ?? '').trim();
+  const dashed = s.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0].replace(/-/g, '');
+  const plain = s.match(/(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])/i)?.[0];
+  const id = dashed ?? plain;
+  return id ? id.toLowerCase() : s;
+}
+
+const schemaCache = new Map(); // "token:databaseId" -> { at, schema }; a short cache so a 500-item run asks Notion once
+async function notionSchema(token, databaseId, { fresh = false } = {}) {
+  const k = `${token.slice(-8)}:${databaseId}`;
+  const hit = schemaCache.get(k);
+  if (!fresh && hit && Date.now() - hit.at < 30000) return hit.schema;
+  const res = await httpRequest({ url: `${config.notionUrl}/v1/databases/${databaseId}`, headers: notionHeaders(token) });
+  const schema = { title: notionTitle(res.data.title), properties: res.data.properties ?? {} };
+  schemaCache.set(k, { at: Date.now(), schema });
+  return schema;
+}
+
 defineNode({
   type: 'app.notion', name: 'Notion', group: 'app', icon: '📓', credentialType: 'notionApi',
-  description: 'Create pages in or query a Notion database.',
+  description: 'Add rows to a Notion database or read them. Pick the database and fill in its columns - no IDs or JSON to write.',
   properties: [
     credentialProperty('notionApi'),
-    { name: 'operation', label: 'Operation', type: 'options', default: 'createPage', options: ['createPage', 'queryDatabase'] },
-    { name: 'databaseId', label: 'Database ID', type: 'string', required: true },
-    { name: 'titleProperty', label: 'Title property name', type: 'string', default: 'Name', showIf: { operation: 'createPage' } },
-    { name: 'title', label: 'Title', type: 'string', showIf: { operation: 'createPage' } },
-    { name: 'properties', label: 'Extra properties (Notion JSON)', type: 'json', default: '{}', showIf: { operation: 'createPage' } },
-    { name: 'filter', label: 'Filter (Notion JSON, optional)', type: 'json', default: '', showIf: { operation: 'queryDatabase' } },
+    { name: 'operation', label: 'What to do', type: 'options', default: 'createPage', options: [{ value: 'createPage', label: 'Add a row to a database' }, { value: 'queryDatabase', label: 'Read rows from a database' }] },
+    { name: 'databaseId', label: 'Database', type: 'options', dynamic: true, options: [], required: true, help: 'Only databases you shared with your integration (⋯ → Connections in Notion) appear here.' },
+    { name: 'title', label: 'Title', type: 'string', showIf: { operation: 'createPage' }, help: 'The text for the row\'s title column.' },
+    { name: 'columns', label: 'Columns', type: 'fields', fieldsFor: 'databaseId', showIf: { operation: 'createPage' } },
+    { name: 'filter', label: 'Only rows matching (Notion filter JSON)', type: 'json', default: '', showIf: { operation: 'queryDatabase' }, advanced: true, help: 'Leave empty to read every row.' },
+    { name: 'titleProperty', label: 'Title column name', type: 'string', default: '', showIf: { operation: 'createPage' }, advanced: true, help: 'Leave empty: it is found automatically.' },
+    { name: 'properties', label: 'Extra columns (Notion JSON)', type: 'json', default: '{}', showIf: { operation: 'createPage' }, advanced: true, help: 'For column types the list above does not cover.' },
   ],
+  async loadOptions(ctx) {
+    const { token } = await ctx.credential();
+    if (!token) throw new Error('Pick a Notion credential first');
+    const res = await httpRequest({
+      method: 'POST', url: `${config.notionUrl}/v1/search`, headers: notionHeaders(token), timeoutMs: 20000,
+      body: { filter: { property: 'object', value: 'database' }, page_size: 100 },
+    });
+    const list = (res.data.results ?? []).map((d) => ({ value: d.id, label: notionTitle(d.title) }));
+    if (!list.length) throw new Error('No database is shared with this integration yet. In Notion open your database, click ⋯ → Connections and add it.');
+    return list;
+  },
+  async loadFields(ctx) {
+    const { token } = await ctx.credential();
+    const db = cleanNotionId(ctx.param('databaseId'));
+    if (!token || !db) return [];
+    const { properties } = await notionSchema(token, db, { fresh: true }); // the editor must show a column you just added in Notion
+    return Object.entries(properties)
+      .filter(([, p]) => NOTION_COLUMNS[p.type])
+      .map(([name, p]) => ({
+        name, label: name, type: NOTION_COLUMNS[p.type].input,
+        options: (p[p.type]?.options ?? []).map((o) => o.name),
+      }));
+  },
   async executeItem(ctx, item, i) {
     const { token } = await ctx.credential();
-    const db = (await ctx.param('databaseId', i));
+    const db = cleanNotionId(await ctx.param('databaseId', i));
+    if (!db) throw new Error('Pick a database first');
     try {
       if (ctx.rawParam('operation') === 'queryDatabase') {
         const filter = (await ctx.jsonParam('filter', i));
         const res = await httpRequest({
-          method: 'POST', url: `https://api.notion.com/v1/databases/${db}/query`, headers: notionHeaders(token), body: filter ? { filter } : {},
+          method: 'POST', url: `${config.notionUrl}/v1/databases/${db}/query`, headers: notionHeaders(token), body: filter ? { filter } : {},
         });
         return res.data.results.map((p) => ({ id: p.id, url: p.url, properties: p.properties }));
       }
-      const properties = {
-        ...((await ctx.jsonParam('properties', i)) ?? {}),
-        [ctx.rawParam('titleProperty') || 'Name']: { title: [{ text: { content: String((await ctx.param('title', i)) ?? '') } }] },
-      };
+      const { properties: schema } = await notionSchema(token, db);
+      const titleName = ctx.rawParam('titleProperty') || Object.keys(schema).find((k) => schema[k].type === 'title') || 'Name';
+      const properties = { ...((await ctx.jsonParam('properties', i)) ?? {}) };
+      const columns = (await ctx.param('columns', i)) ?? {};
+      for (const [name, v] of Object.entries(columns)) {
+        if (v === '' || v === undefined || v === null) continue;
+        const kind = NOTION_COLUMNS[schema[name]?.type];
+        if (!kind) throw new Error(`The database has no fillable column called "${name}"`);
+        if (kind.input === 'number' && !Number.isFinite(Number(v))) throw new Error(`The column "${name}" needs a number, but got "${v}"`);
+        properties[name] = kind.send(v);
+      }
+      properties[titleName] = { title: [{ text: { content: String((await ctx.param('title', i)) ?? '') } }] };
       const res = await httpRequest({
-        method: 'POST', url: 'https://api.notion.com/v1/pages', headers: notionHeaders(token),
+        method: 'POST', url: `${config.notionUrl}/v1/pages`, headers: notionHeaders(token),
         body: { parent: { database_id: db }, properties },
       });
       return { id: res.data.id, url: res.data.url };
@@ -212,7 +282,8 @@ defineNode({
   ],
   async execute(ctx, inputs) {
     const c = await ctx.credential();
-    const { default: pg } = await import('pg');
+    let pg;
+    try { pg = (await import('pg')).default; } catch { throw new Error('The Postgres node needs an extra package. Stop LiteForeFlow, run:  npm run scale-up  and start it again.'); }
     const client = new pg.Client({
       host: c.host, port: Number(c.port) || 5432, database: c.database, user: c.user, password: c.password,
       ssl: c.ssl ? { rejectUnauthorized: false } : undefined, connectionTimeoutMillis: 10000,

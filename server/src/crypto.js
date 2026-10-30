@@ -27,8 +27,15 @@ export function encryptJson(value) {
 }
 
 export function decryptJson(payload) {
-  const [iv, tag, ct] = payload.split('.').map((s) => Buffer.from(s, 'base64'));
-  const decipher = crypto.createDecipheriv('aes-256-gcm', encKey, iv);
-  decipher.setAuthTag(tag);
-  return JSON.parse(Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8'));
+  try {
+    const [iv, tag, ct] = payload.split('.').map((s) => Buffer.from(s, 'base64'));
+    const decipher = crypto.createDecipheriv('aes-256-gcm', encKey, iv);
+    decipher.setAuthTag(tag);
+    return JSON.parse(Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8'));
+  } catch {
+    const e = new Error('This credential cannot be unlocked: the secret key (data/.secret or LITEFOREFLOW_SECRET) is not the one it was saved with. '
+      + 'Restore the old key, or open Credentials and enter this credential again.');
+    e.status = 409;
+    throw e;
+  }
 }

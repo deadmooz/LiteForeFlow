@@ -28,17 +28,33 @@ const MAX_STORED_BYTES = 1_000_000;
 /** Keeps the execution log bounded so one chatty run cannot bloat the database. */
 function compactResults(results) {
   let truncated = false;
-  const cut = (outs) => outs?.map((items) => {
-    if (items.length > MAX_STORED_ITEMS) { truncated = true; return items.slice(0, MAX_STORED_ITEMS); }
-    return items;
-  });
-  const compact = Object.fromEntries(Object.entries(results).map(([id, r]) => [id, { ...r, input: cut(r.input), output: cut(r.output) }]));
-  let json = JSON.stringify(compact);
-  if (json.length > MAX_STORED_BYTES) {
-    truncated = true;
-    json = JSON.stringify(Object.fromEntries(Object.entries(compact).map(([id, r]) => [id, { ...r, input: undefined, output: undefined, note: 'data omitted (too large)' }])));
+  const shrink = (maxItems, maxText, maxList) => {
+    // long texts and long lists INSIDE an item are shortened too (an Aggregate block can hold 50,000 objects in one item);
+    // only the first entries are walked, so this stays cheap however big the data is
+    const cutText = (v) => {
+      if (typeof v === 'string') return v.length > maxText ? `${v.slice(0, maxText)}… (${v.length - maxText} more characters)` : v;
+      if (Array.isArray(v)) {
+        if (v.length <= maxList) return v.map(cutText);
+        return [...v.slice(0, maxList).map(cutText), `… ${v.length - maxList} more entries`];
+      }
+      if (v && typeof v === 'object') { const o = {}; for (const k of Object.keys(v)) o[k] = cutText(v[k]); return o; }
+      return v;
+    };
+    const cut = (outs) => outs?.map((items) => {
+      const kept = items.length > maxItems ? items.slice(0, maxItems) : items;
+      if (kept !== items) truncated = true;
+      return maxText === Infinity ? kept : cutText(kept);
+    });
+    return Object.fromEntries(Object.entries(results).map(([id, r]) => [id, { ...r, input: cut(r.input), output: cut(r.output) }]));
+  };
+  // A real API answer (release notes, long descriptions) can be huge. Instead of throwing away every block's data, keep as much as fits:
+  // 100 items per block, then fewer items, then shorter texts, and only as a last resort nothing.
+  for (const [maxItems, maxText, maxList] of [[MAX_STORED_ITEMS, Infinity, Infinity], [20, 2000, 50], [5, 500, 10], [1, 200, 3]]) {
+    const json = JSON.stringify(shrink(maxItems, maxText, maxList));
+    if (json.length <= MAX_STORED_BYTES) { if (maxText !== Infinity) truncated = true; return { json, truncated }; }
   }
-  return { json, truncated };
+  truncated = true;
+  return { json: JSON.stringify(Object.fromEntries(Object.entries(results).map(([id, r]) => [id, { ...r, input: undefined, output: undefined, note: 'data omitted (too large)' }]))), truncated };
 }
 
 /** Counts the run against the plan and inserts a `queued` execution row. Returns its id. */
@@ -95,7 +111,7 @@ export async function runExecution({ executionId, workflow, mode, triggerNodeId,
   if (result.status === 'error' && mode !== 'error' && mode !== 'subworkflow') {
     submitErrorWorkflow(workflow, executionId, result.error).catch((e) => console.error('[error-workflow]', e.message));
   }
-  return { executionId, status: result.status, error: result.error, lastOutput: result.lastOutput };
+  return { executionId, status: result.status, error: result.error, lastOutput: result.lastOutput, response: result.response };
 }
 
 /** Creates and runs an execution in the current process (sub-workflows, schedules, polling). */

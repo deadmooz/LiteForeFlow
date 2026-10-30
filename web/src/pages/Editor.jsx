@@ -182,8 +182,10 @@ function EditorInner() {
       const p = rf.screenToFlowPosition({ x: box.left + box.width / 2, y: box.top + box.height / 2 });
       pos = { x: Math.round(p.x - 90), y: Math.round(p.y - 28) };
     }
-    // Auto-connect only when the user has explicitly selected a node to continue from.
-    addNode(def, pos, selectedId && anchor?.id === selectedId ? selectedId : undefined);
+    // Continue from the selected node. With nothing selected, continue from the last node if it is still a dead end (so the first block
+    // clicked after the trigger joins it instead of landing next to it unconnected); otherwise place it on its own.
+    const open = anchor && !edges.some((e) => e.source === anchor.id) && (anchor.data.def?.outputs ?? 1) > 0;
+    addNode(def, pos, selectedId && anchor?.id === selectedId ? selectedId : open ? anchor.id : undefined);
   };
 
   const onDrop = (e) => {

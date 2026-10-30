@@ -19,6 +19,7 @@ export class Blocked extends Error {}
 export const blocked = (why) => { throw new Blocked(why); };
 
 export async function t(id, title, fn) {
+  if (process.env.QA_ONLY && !new RegExp(`^(${process.env.QA_ONLY})$`).test(id)) return; // run a subset: QA_ONLY="A-04|B-12"
   const rec = { id, area: currentArea, title, status: 'PASS', note: '' };
   try {
     const note = await Promise.race([fn(), new Promise((_, rej) => setTimeout(() => rej(new Error('TEST TIMEOUT after 150 s — the system under test hung')), 150_000))]);
@@ -39,7 +40,7 @@ export function summary() {
 }
 
 /* ---------------------------------- servers ---------------------------------- */
-let nextPort = 3300;
+let nextPort = Number(process.env.QA_PORT_BASE) || 3300; // Windows reserves some port ranges (EACCES): override with QA_PORT_BASE
 export async function boot(name, env = {}, { dataDir } = {}) {
   const port = nextPort++;
   const dir = dataDir ?? fs.mkdtempSync(path.join(os.tmpdir(), `qa-${name}-`));

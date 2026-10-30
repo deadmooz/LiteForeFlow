@@ -1,200 +1,79 @@
 # LiteForeFlow
 
-A self-hostable workflow-automation tool: a cheaper, flat-priced alternative to n8n / Zapier. This is the **V1 MVP** — visual editor, reliable execution engine, 25+ nodes, templates, an n8n importer, and plan limits with a Stripe hook.
+Build automations by drawing them: *"when a form is submitted, save it to a sheet and message me on Slack"*.
+A tiny, free, self-hosted alternative to n8n / Zapier. **No Docker, no database to set up, no accounts in the cloud** -
+everything runs on your own computer and stays there.
 
-> **Pricing idea being tested:** a flat price per workspace. Runs are counted per workflow execution — never per step, node or loop iteration — and the `runsPerMonth` caps are a fair-use guardrail, not the billing unit. Numbers live in [`server/src/plans.js`](server/src/plans.js) and are hypotheses to validate with users.
+## Start it in 3 steps
 
-## Quick start
+**1. Node.js (the engine that runs LiteForeFlow)** - you do not have to do anything. If it is missing, `start.bat` /
+`start.sh` offer to download a private copy (about 30 MB) into a `runtime` folder next to the app: no administrator
+rights, nothing else on your computer changes. Prefer your own install? Get the **LTS** from <https://nodejs.org>
+(it must be 22.13 or higher).
 
-Requires **Node 22.5+** (uses the built-in `node:sqlite`; no native modules to compile).
+**2. Download this project** (green *Code* button -> *Download ZIP* -> unzip it, or `git clone` it).
 
-```bash
-npm install
-npm run build        # builds the editor into web/dist
-npm start            # http://localhost:3000  (API + editor on one port)
-```
+**3. Start it** - pick whichever is easiest for you:
 
-Development with hot reload (API on :3000, editor on :5173):
-
-```bash
-npm run dev
-```
-
-Create an account on the login page, open **Templates**, and pick one — or build a workflow from scratch.
-
-### Two ways to run it
-
-| | Local / single node (default) | Production topology |
-|---|---|---|
-| Database | SQLite file in `DATA_DIR` | **Postgres** (`DATABASE_URL`) |
-| Queue | in-process limiter + timers | **Redis + BullMQ** (`REDIS_URL`) |
-| Processes | one (`LITEFOREFLOW_ROLE=all`) | any number of **API** (`api`) and **worker** (`worker`) processes |
-| Code/expressions | isolated-vm V8 isolates (both) | same |
-
-```bash
-# production topology, by hand (needs Postgres with a UTF8 database, and Redis)
-export DATABASE_URL=postgres://user:pass@host:5432/liteforeflow REDIS_URL=redis://host:6379 LITEFOREFLOW_SECRET=<64 hex chars>
-LITEFOREFLOW_ROLE=api    npm start --prefix server      # HTTP, webhooks, enqueue, schedules
-LITEFOREFLOW_ROLE=worker npm start --prefix server      # run as many of these as you need
-# or with Docker:  LITEFOREFLOW_SECRET=... docker compose up --build --scale worker=3   (see "Not yet verified")
-```
-
-How it fits together:
-
-- The **API** never runs user workflows. A webhook/editor run inserts an `executions` row (`queued`), puts a job on the BullMQ queue (job id = execution id, so it cannot be enqueued twice), and answers — or, for "respond with last node" and editor runs, waits for the worker's result.
-- **Workers** claim the execution (`queued → running`, atomically), run the graph in V8 isolates, and write results back to Postgres. Sub-workflows run inline in the same worker slot, so workers can never deadlock waiting on each other.
-- **Schedules** (cron, RSS polling) are BullMQ *job schedulers* stored in Redis, so they fire exactly once no matter how many API instances you run, survive restarts, and are removed on deactivation.
-- **Crashes:** `maxStalledCount` is 0 — a workflow whose worker dies is marked `error` ("Worker failed: job stalled…") and is **not** re-run, because replaying a half-finished workflow could repeat side effects (double emails, double charges). A reaper also fails any execution stuck in `queued/running` for 2h.
-- **Back-pressure:** new runs are refused with 503 when more than `MAX_QUEUE_DEPTH` jobs are waiting. Monthly run limits are enforced with an atomic `UPDATE … WHERE runs < cap`, so they hold across processes.
-- Shutdown (`SIGTERM`) stops taking jobs and waits for in-flight ones (up to 30 s).
-
-### Running it on a small server
-
-The default mode (SQLite + in-process queue, one Node process) is the lightest. Measured with `node server/test/bench.mjs`
-(600 webhook runs of Webhook → Code → Edit Fields, 10 concurrent, Node 24, Windows dev machine):
-
-| | Before tuning | After |
-|---|---|---|
-| Idle memory (RSS) | 62 MB | **54 MB** |
-| Peak under load | ~80 MB | **~71 MB** |
-| Startup | ~330 ms | ~300 ms |
-| Throughput | ~100 runs/s | ~100 runs/s (same; noisy ±40%) |
-
-What keeps it small, and the knobs if you need to go lower:
-
-- `npm start` runs Node with `--max-semi-space-size=2 --max-old-space-size=192` (about −8 MB idle, −10 MB peak). Raise the heap cap if you process very large payloads.
-- Heavy modules load only when used: the V8 sandbox (`isolated-vm`) on the first expression/Code node, `node-cron` on the first schedule, Postgres/Redis/BullMQ/SMTP only when configured or used. No Redis, no Postgres, no worker processes in the default mode.
-- Each run does 4 small database writes (it used to do 7 plus a plan lookup): the run counter is one atomic statement, plans are cached for 30 s, static data is written only when it changed, and SQLite runs in WAL with `synchronous=NORMAL` (far fewer fsyncs).
-- Execution logs are gzip-compressed (about 5–10× smaller on typical JSON). To store even less, untick **Keep node data of successful runs** in a workflow's settings, or set `SAVE_SUCCESS_DATA=false` globally. Failed runs and editor runs always keep full data.
-- Log retention is 3 days on Free; lower `MAX_CONCURRENCY` and `SANDBOX_MEMORY_MB` (default 64 MB per running node) to cap peak memory on tiny hosts.
-- The editor serves fingerprinted assets with a 1-year cache header, and the executions page no longer polls from hidden tabs (15 s otherwise).
-
-Not measured: a real 512 MB / 1 vCPU VPS, Linux, or memory over days of uptime. CPU is the first limit you will hit: expressions and Code nodes run synchronously (up to their 1–5 s timeouts).
-
-### Tests
-
-```bash
-npm test                                   # 14 tests on SQLite + in-process queue (no services needed)
-
-# same suite on the production stack, plus multi-process tests with real worker processes:
-export TEST_DATABASE_URL=postgres://user:pass@localhost:5432/liteforeflow TEST_REDIS_URL=redis://localhost:6379
-npm test -w server && node --test --test-concurrency=1 server/test/distributed.test.js
-```
-
-Each run uses its own Postgres schema and queue name and cleans up after itself.
-
-## What's in V1
-
-| Area | Included |
+| You use... | Do this |
 |---|---|
-| **Editor** | React Flow canvas, searchable palette (click to add + auto-connect, or drag), per-node form generated from the node's schema, `{{ expressions }}`, **Test this step**, per-node run data, status colours, webhook URL bar, Ctrl+S |
-| **Triggers** | Manual, Webhook (path, method, shared secret, respond immediately / with last node), Schedule (cron + timezone), RSS polling, Error trigger |
-| **Logic / data** | HTTP Request, IF, Switch, Merge (append / by position / by key), Wait, Execute Workflow (sub-workflows), Stop and Error, Edit Fields, Code (JS), Split Out, Aggregate, Limit, No-op |
-| **AI** | LLM node (OpenAI, Anthropic, or any OpenAI-compatible API via base URL; optional JSON parsing) and an **AI Agent** with tool calling (HTTP GET, calculator, clock) |
-| **Apps** | Slack, Telegram, Discord, Notion, Airtable, Stripe, HubSpot, Postgres, SMTP email, Google Sheets (service account) |
-| **Reliability** | Per-node retries, continue-on-fail, per-workflow timeout, error workflows, execution history with per-node input/output, bounded log size, retention per plan, concurrency limiter |
-| **Security** | Credentials encrypted with AES-256-GCM, secrets never returned to the browser, workspace isolation, bcrypt + JWT, rate-limited auth, sandboxed expressions/code, webhook secrets, optional private-network blocking for the HTTP node |
-| **Business** | Workspaces + member invites, Free/Pro/Team plan limits (runs, active workflows, members, log retention), Stripe Checkout + signed-webhook handler, dev-mode plan switch |
-| **Adoption** | 15 templates, **n8n workflow importer** with a "N of M nodes converted" compatibility report |
+| **Windows** | Double-click **`start.bat`** |
+| **Mac / Linux** | Open a terminal in the folder and run `./start.sh` (the first time: `chmod +x start.sh`) |
+| **Python** | `python run.py` |
+| **npm** | `npm install` once, then `npm start` |
 
-## Adding an integration
+The first start installs a few small packages (about a minute, needs internet, only once). Then your browser opens at
+**http://localhost:3000**. Click **Create an account** (it is free and stays on your computer) and open **Templates**
+to try a ready-made automation.
 
-A node is one declarative object (see [`server/src/nodes/registry.js`](server/src/nodes/registry.js)). The editor form, credential picker and palette entry come for free:
+To stop it, press **Ctrl+C** in the window (or just close the window).
 
-```js
-defineNode({
-  type: 'app.example', name: 'Example', group: 'app', icon: '🧪', credentialType: 'exampleApi',
-  description: 'Create a thing.',
-  properties: [
-    credentialProperty('exampleApi'),
-    { name: 'title', label: 'Title', type: 'string', required: true },
-  ],
-  async executeItem(ctx, item, i) {            // runs once per input item
-    const { token } = await ctx.credential();
-    const res = await httpRequest({ method: 'POST', url: 'https://api.example.com/things',
-      headers: { authorization: `Bearer ${token}` }, body: { title: ctx.param('title', i) } });
-    return res.data;                           // object, array of objects, or null
-  },
-});
-```
+## Using it
 
-Add the credential type to [`credentialTypes.js`](server/src/credentialTypes.js) and import your file in `nodes/index.js`.
+1. **Templates** - pick one and click *Use template*. 15 ready-made automations (alerts, reports, AI helpers...).
+2. **Build your own** - *Workflows -> New workflow*. Click a block on the left to add it; it connects itself to the block you selected.
+   Click a block to fill in its settings. Use `{{ $json.name }}` inside any text field to use data from the previous step.
+3. **Run** - press **Run** to try it on the spot; each block turns green (worked) or red (failed) and *Data* shows what went through.
+4. **Switch it on** - a workflow with a **Webhook** (runs when a URL is called), **Schedule** (runs on a timer) or **RSS** trigger
+   can be switched to *Active*; then it runs by itself while LiteForeFlow is running.
+5. **Credentials** - passwords and API keys for services like Slack are saved (encrypted) under *Credentials*, never inside workflows.
 
-## Configuration (environment variables)
+## Free AI on your own computer (Ollama)
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `PORT` | `3000` | HTTP port |
-| `PUBLIC_URL` | `http://localhost:PORT` | Used in Stripe redirect URLs |
-| `DATA_DIR` | `./data` | SQLite database and generated secret |
-| `LITEFOREFLOW_SECRET` | auto-generated in `DATA_DIR/.secret` | Master key for credential encryption and JWTs. **Back it up — losing it makes stored credentials unreadable.** |
-| `BLOCK_PRIVATE_NETWORK` | `false` | `true` makes the HTTP node refuse loopback/private IPs (set this when hosting for others) |
-| `ENABLE_CODE_NODE` | `true` | Disable the Code node |
-| `ALLOW_SIGNUP` | `true` | `false` to close registration after creating your account |
-| `DATABASE_URL` | — (SQLite) | Postgres connection string. The database **must be UTF8** (checked at boot). Required for `api`/`worker` roles |
-| `PG_SCHEMA`, `PG_POOL_SIZE` | — , `10` | Optional schema (created if missing) and pool size |
-| `REDIS_URL` | — (in-process queue) | Enables BullMQ. Use `maxmemory-policy noeviction` (and AOF) on Redis |
-| `LITEFOREFLOW_ROLE` | `all` | `all` = API + worker; `api` = HTTP/enqueue/schedules; `worker` = executes jobs only |
-| `QUEUE_NAME` | `liteforeflow-executions` | Change to isolate environments sharing one Redis |
-| `MAX_CONCURRENCY` | `10` | Simultaneous workflow runs **per worker process** |
-| `MAX_QUEUE_DEPTH` | `10000` | Waiting jobs before new runs get HTTP 503 |
-| `WORKER_LOCK_MS`, `WORKER_STALLED_INTERVAL_MS` | `60000`, `15000` | How quickly a dead worker's job is declared failed |
-| `SANDBOX_MEMORY_MB` | `64` | Heap cap of each V8 isolate running expressions / Code nodes |
-| `STRIPE_SECRET_KEY`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_TEAM`, `STRIPE_WEBHOOK_SECRET` | — | Enable billing. Point a Stripe webhook at `/api/billing/webhook` (events: `checkout.session.completed`, `customer.subscription.deleted`) |
-| `NODE_ENV=production` | — | Disables the dev-only `/api/billing/dev-plan` endpoint |
+1. Install [Ollama](https://ollama.com/download), then run `ollama pull llama3.2` once (a few GB download).
+2. In a workflow add an **LLM** or **AI Agent** block and set *Provider* to **ollama**. No account, no API key and no credential are needed;
+   leave *Model* empty for `llama3.2`, or choose any model you pulled from the list.
+   *Thinking* is **off** by default: many local models (qwen3, deepseek-r1) otherwise write minutes of private reasoning before a simple answer (measured: 124 s with thinking, 4.5 s without). Turn it on only for hard problems.
+3. Ollama runs on another computer? Add an **Ollama (local AI)** credential with its address, or set `OLLAMA_HOST` (see [docs/ADVANCED.md](docs/ADVANCED.md)).
 
-## Known limitations (be honest with early users)
+## Plugins: add your own blocks
 
-These are deliberate V1 cuts or things not yet verified:
+LiteForeFlow comes with plugins for **Respond to Webhook**, **data tools** (Filter, Sort, Remove Duplicates, Date & Time, Crypto, batches) and a **REST connector** (GitHub, Trello, OpenWeather, Hacker News).  
+Open **Plugins** in the app to see or turn them off. To add your own, run `npm run plugin:new -- my-plugin`, edit the file it creates in `data/plugins`, and press *Reload*.
+Connecting a web service needs no code at all, just one small JSON file. Guide: [docs/PLUGINS.md](docs/PLUGINS.md).
 
-- **Third-party nodes are not tested against the live services.** The HTTP, LLM and agent paths are covered by tests against a local mock server; Slack, Notion, Airtable, Stripe, HubSpot, Postgres, SMTP, Telegram, Discord and Google Sheets call documented REST APIs but have not been run against real accounts. Expect small fixes during beta.
-- **No OAuth2 flow yet**, so there is no Gmail / Google Drive / Calendar node. Email works through SMTP (Gmail app passwords work); Sheets uses a service account that the sheet is shared with. OAuth2 is the first thing to add for the "400 integrations" story.
-- **Sandbox:** expressions and the Code node run in separate **isolated-vm V8 isolates**: no Node globals (`process`, `require`, `fetch`, timers, `Buffer` are all absent), a per-isolate memory cap, wall-clock timeouts, JSON-only data exchange. Tests cover escape attempts, infinite loops and memory bombs. This is a much stronger boundary than `node:vm`, but it is still in-process: it does not limit CPU *share* (a hot loop pins a core until its 1–5 s timeout) and V8 itself can have bugs. For strictly hostile tenants add OS-level isolation (a container/gVisor per worker, or a dedicated worker pool for untrusted workspaces). Code is synchronous only (no `await`, no network from code — use the HTTP node).
-- **Execution is evaluated synchronously inside a worker**, so a heavy expression blocks that worker's event loop for up to its timeout; keep `MAX_CONCURRENCY` modest and scale workers horizontally. `Wait` holds a worker slot (max 5 min).
-- **Editor "Run" results are the stored execution log**, so they follow the same size caps as history (100 items per output, ~1 MB per run).
-- **No per-workspace fairness yet:** one busy workspace can fill the queue. Per-tenant concurrency limits need either BullMQ Pro groups or separate queues.
-- Windows: `SIGTERM` cannot be trapped, so graceful worker shutdown only applies on Linux/macOS/containers.
-- **No loops/cycles in the graph** (nodes already run per item; use Split Out for arrays). No binary/file data. No versioning/Git, environments, SSO, or fine-grained RBAC (owner/member only). Invites require the person to have signed up already (no email delivery).
-- **The n8n importer is best-effort**: it maps ~15 core node types and reports the rest as placeholders. Credentials are never in n8n exports. There is no Zapier importer (Zapier has no portable export).
-- Billing has not been exercised against Stripe; only signature verification and the plan-limit logic are tested. 
+## Good to know
 
-## Not yet verified
+- **It only runs while it is started.** Schedules and webhooks work while the window is open. Leave it running on a computer that stays on.
+- **Your data** (workflows, accounts, run history) lives in the `data` folder next to the app. Copy that folder to back it up or move to another computer.
+  Keep `data/.secret` with it - it is the key that unlocks your saved credentials.
+- **Updating:** download the new version, copy your old `data` folder into it, and start.
+- **Other people on your network** can use it too: they open `http://<your-computer-ip>:3000`. Only do this on a network you trust,
+  and read *Sharing it* in [docs/ADVANCED.md](docs/ADVANCED.md) first.
 
-- Redis was only tested as a single node (no Sentinel/Cluster); Postgres 17 (compose) and 18 (tests) only — the SQL is plain and expected to work on 14+.
-- The image was built and run on Docker Desktop for Windows (Linux containers) only.
+## Something went wrong?
 
-## Verified in containers
+| You see | Do this |
+|---|---|
+| "needs Node.js" | Answer **Y** to download it. Said no, or it failed? Install the LTS from <https://nodejs.org>, then **close and reopen** the window |
+| Node.js too old | Answer **Y** and the launcher uses its own newer copy (your old one stays untouched) |
+| The install fails / is stuck | Check your internet connection, delete the `node_modules` folder, start again |
+| "Port 3000 is already in use" | LiteForeFlow picks the next free port automatically; or run `python run.py --port 3100` |
+| Browser did not open | Open the address printed in the window (http://localhost:3000) yourself |
+| Forgot your password | Your data is local: create a new account (or delete the `data` folder to start from scratch - this erases everything) |
+| A workflow fails with "No credential selected" | Open the failing block, choose a credential (or click **+ New**) |
 
-`docker compose up --build --scale worker=2` (Postgres 17, Redis 7, 1 API, 2 workers), then `node server/test/e2e-compose.mjs`:
+## More
 
-- isolated-vm works in the Linux image; editor runs execute in the sandbox on a worker container.
-- 40 concurrent webhooks all answered correctly and were spread over both workers.
-- Cron ticks fire once per tick (not once per container); usage metering holds across processes.
-- `docker stop` (SIGTERM) on a worker mid-run: the run **finished** before the container exited.
-- `docker kill` (SIGKILL) mid-run: the run is marked `error` ("job stalled…") ~75 s later by a surviving worker and is **not** re-run. (A crash with no other worker alive is only noticed when a worker next starts, or by the 2 h reaper.)
-- Restarting the API, and `down` / `up` with volumes kept, preserve users, workflows, active webhooks and history.
-
-Compose needs `LITEFOREFLOW_SECRET` in the environment on **every** `docker compose` command (it is required, so the stack refuses to start without it).
-- Throughput/soak behaviour under sustained load has not been measured.
-- Licensing: this is a clean-room implementation — do not copy code from n8n (Sustainable Use License). Have counsel review before launch.
-
-## Suggested next steps
-
-1. Run the 15 user interviews and validate flat pricing before building more.
-2. OAuth2 framework + Gmail / Google Sheets (OAuth) / Calendar.
-3. Postgres + Redis queue, `isolated-vm`, email-based invites.
-4. Execution-time metrics (cost per run) to confirm unit economics under the flat price.
-
-## Layout
-
-```
-server/src
-  engine.js        graph execution, retries, per-item processing, cycle detection
-  expressions.js   sandboxed {{ }} evaluation and Code node runtime
-  runner.js        execution records, concurrency limiter, sub/error workflows
-  scheduler.js     activation, webhook registry, cron, RSS polling
-  nodes/           registry.js (SDK), core.js, ai.js, apps.js
-  routes/          auth, workflows, resources (credentials, executions, templates, import, billing), webhooks
-  templates.js  importer.js  plans.js  credentialTypes.js
-web/src            React editor (pages/, components/)
-```
+- Settings, scaling up to Postgres + Redis, adding your own integrations, limits and security notes: **[docs/ADVANCED.md](docs/ADVANCED.md)**
+- How it was tested: [QA_REPORT.md](QA_REPORT.md)

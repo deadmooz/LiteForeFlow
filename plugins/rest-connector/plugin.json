@@ -1,0 +1,8 @@
+{
+  "id": "rest-connector",
+  "name": "REST connector",
+  "version": "1.0.0",
+  "description": "Adds a node (and credential type) for every service described by a small JSON file in services/. Ships with GitHub, Trello, OpenWeather and Hacker News. Add your own service without writing code.",
+  "author": "LiteForeFlow",
+  "apiVersion": 1
+}

@@ -1,0 +1,8 @@
+{
+  "id": "respond-to-webhook",
+  "name": "Respond to Webhook",
+  "version": "1.0.0",
+  "description": "Lets a workflow answer the caller of its webhook with its own status code, headers and body, so you can build small APIs.",
+  "author": "LiteForeFlow",
+  "apiVersion": 1
+}

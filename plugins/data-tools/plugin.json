@@ -1,0 +1,8 @@
+{
+  "id": "data-tools",
+  "name": "Data tools",
+  "version": "1.0.0",
+  "description": "Everyday data helpers: Filter, Sort, Remove Duplicates, Date & Time, Crypto (hash, HMAC, UUID, base64) and Split into Batches.",
+  "author": "LiteForeFlow",
+  "apiVersion": 1
+}

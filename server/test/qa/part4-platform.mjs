@@ -253,7 +253,7 @@ export default async function part4({ s1, sProd, sBill, mock }) {
     const paths = ['/..%2f..%2fpackage.json', '/assets/..%2f..%2f..%2fserver/package.json', '/%2e%2e/%2e%2e/package.json', '/..\\..\\package.json', '/assets/../../../package.json'];
     for (const p of paths) {
       const r = await anon.get(p, { token: null });
-      assert.ok(!/"workspaces"|flowforge|liteforeflow-server/.test(r.text) || r.text.includes('<!doctype html>'), `traversal ${p} leaked a file`);
+      assert.ok(!/"scripts"|"dependencies"/.test(r.text) || r.text.includes('<!doctype html>'), `traversal ${p} leaked a file`);
     }
   });
   await t('SEC-04', 'Unknown /api routes return JSON 404; unknown pages fall back to the SPA', async () => {

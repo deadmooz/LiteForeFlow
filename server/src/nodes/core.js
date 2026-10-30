@@ -1,6 +1,6 @@
 import { defineNode, credentialProperty } from './registry.js';
 import { httpRequest } from '../http.js';
-import { runCode, testRegex } from '../expressions.js';
+import { runCode, testRegex, createItemCodeRunner } from '../expressions.js';
 import { config } from '../config.js';
 import { get } from '../db.js';
 import { loadCredential } from '../credentials.js';
@@ -21,7 +21,7 @@ defineNode({
   properties: [
     { name: 'path', label: 'Path', type: 'string', required: true, help: 'Served at /webhook/<path> while the workflow is active.' },
     { name: 'method', label: 'HTTP method', type: 'options', default: 'POST', options: ['ANY', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
-    { name: 'respond', label: 'Respond', type: 'options', default: 'immediately', options: ['immediately', 'lastNode'], help: '"lastNode" waits for the run and returns the last node output.' },
+    { name: 'respond', label: 'Respond', type: 'options', default: 'immediately', options: ['immediately', 'lastNode', 'responseNode'], help: '"lastNode" waits for the run and returns the last node output. "responseNode" waits and sends what a "Respond to Webhook" node (plugin) sets: status, headers and body.' },
     { name: 'secret', label: 'Shared secret (optional)', type: 'string', help: 'If set, callers must send it in the x-webhook-secret header.' },
     { name: 'samplePayload', label: 'Sample payload for test runs', type: 'json', default: '{\n  "body": { "hello": "world" }\n}' },
   ],
@@ -30,10 +30,11 @@ defineNode({
 
 defineNode({
   type: 'trigger.cron', name: 'Schedule', group: 'trigger', icon: '⏰', isTrigger: true, inputs: 0,
-  description: 'Start the workflow on a schedule (cron expression).',
+  description: 'Start the workflow on a schedule, for example every day at 9:00.',
   properties: [
-    { name: 'cron', label: 'Cron expression', type: 'string', default: '0 * * * *', required: true, help: 'min hour day month weekday — e.g. "0 9 * * 1-5" = 09:00 on weekdays.' },
-    { name: 'timezone', label: 'Timezone', type: 'string', default: 'UTC', help: 'IANA name, e.g. America/New_York' },
+    // The UI shows a friendly picker for 'schedule'; what is stored is still a plain cron expression.
+    { name: 'cron', label: 'When to run', type: 'schedule', default: '0 * * * *', required: true },
+    { name: 'timezone', label: 'Timezone', type: 'timezone', default: 'UTC' },
   ],
   execute: passTrigger,
 });
@@ -71,23 +72,32 @@ defineNode({
     { name: 'timeoutSec', label: 'Timeout (seconds)', type: 'number', default: 30 },
     { name: 'ignoreStatus', label: 'Do not fail on 4xx/5xx', type: 'boolean', default: false },
   ],
-  async executeItem(ctx, item, i) {
+  // Two steps so that read-only calls for many items can wait for the web service at the same time (see registry.js).
+  concurrency: 5,
+  parallelSafe: (req) => req.method === 'GET' || req.method === 'HEAD',
+  async prepareItem(ctx, item, i) {
     const headers = { ...((await ctx.jsonParam('headers', i)) ?? {}) };
     const credId = ctx.rawParam('credential');
     if (credId) {
-      const row = await get('SELECT type FROM credentials WHERE id = ? AND workspace_id = ?', credId, ctx.workspaceId);
-      if (!row) throw new Error('Credential not found');
-      const c = await loadCredential(ctx.workspaceId, credId, row.type);
-      if (row.type === 'httpBearer') headers.authorization = `Bearer ${c.token}`;
-      else if (row.type === 'httpBasic') headers.authorization = `Basic ${Buffer.from(`${c.user}:${c.password}`).toString('base64')}`;
-      else if (row.type === 'httpHeader') headers[c.name] = c.value;
+      // looked up once per node run, not once per item
+      ctx.scratch.auth ??= (async () => {
+        const row = await get('SELECT type FROM credentials WHERE id = ? AND workspace_id = ?', credId, ctx.workspaceId);
+        if (!row) throw new Error('Credential not found');
+        return { type: row.type, data: await loadCredential(ctx.workspaceId, credId, row.type) };
+      })();
+      const { type, data: c } = await ctx.scratch.auth;
+      if (type === 'httpBearer') headers.authorization = `Bearer ${c.token}`;
+      else if (type === 'httpBasic') headers.authorization = `Basic ${Buffer.from(`${c.user}:${c.password}`).toString('base64')}`;
+      else if (type === 'httpHeader') headers[c.name] = c.value;
     }
-    const res = await httpRequest({
+    return {
       method: (await ctx.param('method', i)), url: (await ctx.param('url', i)), headers,
       query: (await ctx.jsonParam('query', i)) ?? {}, body: (await ctx.param('body', i)), bodyType: (await ctx.param('bodyType', i)),
       timeoutMs: Number((await ctx.param('timeoutSec', i)) || 30) * 1000, ignoreStatus: !!(await ctx.param('ignoreStatus', i)),
-      signal: ctx.signal,
-    });
+    };
+  },
+  async runPrepared(ctx, req) {
+    const res = await httpRequest({ ...req, signal: ctx.signal });
     const d = res.data;
     // Arrays are returned under `data`; objects are spread for convenient access ({{ $json.name }}).
     return Array.isArray(d) || typeof d !== 'object' || d === null
@@ -116,7 +126,7 @@ const OPS = {
 };
 export const conditionOperators = Object.keys(OPS);
 
-async function checkConditions(conds, combine, sandbox) {
+export async function checkConditions(conds, combine, sandbox) {
   const list = Array.isArray(conds) ? conds : [];
   if (!list.length) return true;
   const test = async (c) => {
@@ -280,11 +290,14 @@ defineNode({
     const nodesData = {};
     if (ctx.rawParam('mode') === 'eachItem') {
       const out = [];
-      for (let i = 0; i < inputs[0].length; i += 1) {
-        const { result, logs } = await runCode(code, { $json: inputs[0][i].json, $itemIndex: i, $input: { all: inputs[0].map((x) => x.json) } }, { sandbox: ctx.sandbox });
-        logs.forEach((l) => ctx.log(l));
-        if (result !== null && result !== undefined) out.push({ json: unwrap(result) });
-      }
+      const runner = createItemCodeRunner(ctx.sandbox, code, inputs[0].map((x) => x.json)); // the list is handed over once, not once per item
+      try {
+        for (let i = 0; i < inputs[0].length; i += 1) {
+          const { result, logs } = await runner.run(inputs[0][i].json, i);
+          logs.forEach((l) => ctx.log(l));
+          if (result !== null && result !== undefined) out.push({ json: unwrap(result) });
+        }
+      } finally { runner.release(); }
       return [out];
     }
     const { result, logs } = await runCode(code, { items: inputs[0].map((i) => i.json), $input: { all: inputs[0].map((i) => i.json) }, $node: nodesData }, { sandbox: ctx.sandbox });

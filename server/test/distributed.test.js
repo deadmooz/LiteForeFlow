@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -33,7 +34,7 @@ let token;
 const children = [];
 
 function spawnWorker() {
-  const child = spawn(process.execPath, ['src/worker.js'], { env: { ...process.env, ...ENV }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/worker.js', import.meta.url))], { env: { ...process.env, ...ENV }, stdio: ['ignore', 'pipe', 'pipe'] });
   children.push(child);
   let out = '';
   return new Promise((resolve, reject) => {

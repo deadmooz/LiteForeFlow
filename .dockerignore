@@ -2,7 +2,14 @@ node_modules
 **/node_modules
 web/dist
 data
-data-demo
-.env
 .git
+.env
 **/*.log
+docs
+scripts
+server/test
+start.bat
+start.sh
+run.py
+*.md
+plugins-user
