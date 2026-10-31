@@ -1,0 +1,20 @@
+{
+  "id": "hackernews",
+  "name": "Hacker News",
+  "icon": "🟧",
+  "description": "Read stories, comments and users from Hacker News. No account needed.",
+  "baseUrl": "https://hacker-news.firebaseio.com/v0",
+  "auth": { "type": "none" },
+  "operations": [
+    { "id": "topStories", "label": "Top story ids", "method": "GET", "path": "/topstories.json", "fields": [] },
+    { "id": "newStories", "label": "Newest story ids", "method": "GET", "path": "/newstories.json", "fields": [] },
+    {
+      "id": "item", "label": "Get a story or comment", "method": "GET", "path": "/item/{id}.json",
+      "fields": [{ "name": "id", "label": "Item id", "type": "number", "in": "path", "required": true, "help": "Use an id from a story list, for example {{ $json.value }}" }]
+    },
+    {
+      "id": "user", "label": "Get a user", "method": "GET", "path": "/user/{name}.json",
+      "fields": [{ "name": "name", "label": "Username", "type": "string", "in": "path", "required": true }]
+    }
+  ]
+}

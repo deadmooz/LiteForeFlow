@@ -19,6 +19,7 @@ export class Blocked extends Error {}
 export const blocked = (why) => { throw new Blocked(why); };
 
 export async function t(id, title, fn) {
+  if (process.env.QA_ONLY && !new RegExp(`^(${process.env.QA_ONLY})$`).test(id)) return; // run a subset: QA_ONLY="A-04|B-12"
   const rec = { id, area: currentArea, title, status: 'PASS', note: '' };
   try {
     const note = await Promise.race([fn(), new Promise((_, rej) => setTimeout(() => rej(new Error('TEST TIMEOUT after 150 s — the system under test hung')), 150_000))]);
@@ -39,8 +40,15 @@ export function summary() {
 }
 
 /* ---------------------------------- servers ---------------------------------- */
-let nextPort = 3300;
+let nextPort = Number(process.env.QA_PORT_BASE) || 3300; // Windows reserves some port ranges (EACCES): override with QA_PORT_BASE
+// A server left over from an earlier run would answer /api/health and make the harness test the WRONG server.
+const portInUse = (port) => new Promise((resolve) => {
+  const s = net.connect({ port, host: '127.0.0.1' });
+  s.once('connect', () => { s.destroy(); resolve(true); });
+  s.once('error', () => resolve(false));
+});
 export async function boot(name, env = {}, { dataDir } = {}) {
+  while (await portInUse(nextPort)) nextPort += 1;
   const port = nextPort++;
   const dir = dataDir ?? fs.mkdtempSync(path.join(os.tmpdir(), `qa-${name}-`));
   const flags = ['--max-semi-space-size=2', '--max-old-space-size=192'];

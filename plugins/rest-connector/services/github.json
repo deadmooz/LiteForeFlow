@@ -1,0 +1,47 @@
+{
+  "id": "github",
+  "name": "GitHub",
+  "icon": "🐙",
+  "description": "List repositories and issues, create issues and comment on them.",
+  "baseUrl": "https://api.github.com",
+  "headers": { "accept": "application/vnd.github+json", "x-github-api-version": "2022-11-28" },
+  "auth": { "type": "bearer", "label": "Personal access token" },
+  "setup": [
+    "Open https://github.com/settings/tokens and create a token (a fine-grained token with Issues: read and write is enough).",
+    "Copy the token (it starts with github_pat_ or ghp_) and paste it here."
+  ],
+  "test": { "path": "/user", "say": "Connected to GitHub as {login}." },
+  "operations": [
+    {
+      "id": "listRepos", "label": "List my repositories", "method": "GET", "path": "/user/repos",
+      "fields": [
+        { "name": "sort", "label": "Order by", "type": "options", "in": "query", "default": "updated", "options": ["updated", "created", "pushed", "full_name"] },
+        { "name": "per_page", "label": "How many (max 100)", "type": "number", "in": "query", "default": 30 }
+      ]
+    },
+    {
+      "id": "listIssues", "label": "List issues of a repository", "method": "GET", "path": "/repos/{repository}/issues",
+      "fields": [
+        { "name": "repository", "label": "Repository", "type": "options", "in": "path", "raw": true, "required": true, "options": { "from": "/user/repos?per_page=100&sort=updated", "value": "full_name", "label": "full_name" }, "help": "Pick from your repositories, or type owner/name." },
+        { "name": "state", "label": "Which issues", "type": "options", "in": "query", "default": "open", "options": ["open", "closed", "all"] },
+        { "name": "per_page", "label": "How many (max 100)", "type": "number", "in": "query", "default": 30 }
+      ]
+    },
+    {
+      "id": "createIssue", "label": "Create an issue", "method": "POST", "path": "/repos/{repository}/issues",
+      "fields": [
+        { "name": "repository", "label": "Repository", "type": "options", "in": "path", "raw": true, "required": true, "options": { "from": "/user/repos?per_page=100&sort=updated", "value": "full_name", "label": "full_name" } },
+        { "name": "title", "label": "Title", "type": "string", "in": "body", "required": true },
+        { "name": "body", "label": "Description", "type": "text", "in": "body" }
+      ]
+    },
+    {
+      "id": "addComment", "label": "Comment on an issue", "method": "POST", "path": "/repos/{repository}/issues/{number}/comments",
+      "fields": [
+        { "name": "repository", "label": "Repository", "type": "options", "in": "path", "raw": true, "required": true, "options": { "from": "/user/repos?per_page=100&sort=updated", "value": "full_name", "label": "full_name" } },
+        { "name": "number", "label": "Issue number", "type": "number", "in": "path", "required": true },
+        { "name": "body", "label": "Comment", "type": "text", "in": "body", "required": true }
+      ]
+    }
+  ]
+}

@@ -1,16 +1,32 @@
-# Production-shaped stack: Postgres + Redis + API process + horizontally scalable worker processes.
-#   LITEFOREFLOW_SECRET=$(openssl rand -hex 32) docker compose up --build --scale worker=3
-# Verified end to end (see README "Verified in containers").
+# LiteForeFlow, Docker edition: Postgres + Redis + one API container + any number of worker containers.
+#
+#   1) copy .env.example to .env and set LITEFOREFLOW_SECRET  (openssl rand -hex 32)
+#   2) docker compose up -d --build --scale worker=2
+#   3) open http://localhost:3000
+#
+# It has every feature of the Lite edition (plugins, Ollama, schedules, friendly fields, ...) plus durable queueing,
+# several workers, Postgres and graceful restarts. See docs/DOCKER.md.
 x-app: &app
   build: .
   restart: unless-stopped
   environment: &env
     DATABASE_URL: postgres://liteforeflow:${POSTGRES_PASSWORD:-liteforeflow}@postgres:5432/liteforeflow
     REDIS_URL: redis://redis:6379
-    LITEFOREFLOW_SECRET: ${LITEFOREFLOW_SECRET:?set LITEFOREFLOW_SECRET (it encrypts stored credentials - back it up)}
+    LITEFOREFLOW_SECRET: ${LITEFOREFLOW_SECRET:?set LITEFOREFLOW_SECRET in .env (it encrypts stored credentials - back it up)}
     PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
     BLOCK_PRIVATE_NETWORK: ${BLOCK_PRIVATE_NETWORK:-true}
+    ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
     MAX_CONCURRENCY: ${MAX_CONCURRENCY:-10}
+    # Ollama (free local AI) runs on your host machine; containers reach it through host.docker.internal.
+    OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+    # Plugins: the bundled ones are inside the image; put your own folders in ./plugins-user (read by every container).
+    PLUGINS_DIR: /plugins
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  volumes:
+    # Shared by the API and every worker: plugin on/off switches, plugin files and private plugin data live here.
+    - appdata:/data
+    - ./plugins-user:/plugins:ro
   depends_on:
     postgres: { condition: service_healthy }
     redis: { condition: service_healthy }
@@ -45,15 +61,16 @@ services:
   api:
     <<: *app
     environment: { <<: *env, LITEFOREFLOW_ROLE: api }
-    ports: ["3000:3000"]
+    ports: ["${PORT:-3000}:3000"]
 
   worker:
     <<: *app
     environment: { <<: *env, LITEFOREFLOW_ROLE: worker }
-    # Scale with: docker compose up --scale worker=N
-    stop_grace_period: 60s   # SIGTERM lets in-flight runs finish (verified); only then is the container killed
+    # Scale with: docker compose up -d --scale worker=N
+    stop_grace_period: 60s   # SIGTERM lets in-flight runs finish before the container is stopped
     healthcheck: { disable: true }   # workers serve no HTTP; the image's /api/health check is for the api role
 
 volumes:
   pgdata:
   redisdata:
+  appdata:

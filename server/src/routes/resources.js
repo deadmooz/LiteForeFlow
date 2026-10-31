@@ -3,8 +3,9 @@ import crypto from 'node:crypto';
 import { all, get, run, uid, now } from '../db.js';
 import { HttpError } from './auth.js';
 import { encryptJson, decryptJson } from '../crypto.js';
-import { credentialTypes, getCredentialType, validateCredentialData } from '../credentialTypes.js';
-import { listNodeTypes } from '../nodes/index.js';
+import { credentialTypes, getCredentialType, validateCredentialData, testCredential } from '../credentialTypes.js';
+import { loadCredential } from '../credentials.js';
+import { listNodeTypes, getNodeType, withDefaults } from '../nodes/index.js';
 import { templates, getTemplate } from '../templates.js';
 import { convertN8nWorkflow } from '../importer.js';
 import { createWorkflow, checkDefinition } from './workflows.js';
@@ -17,14 +18,57 @@ import { httpRequest } from '../http.js';
 export const catalogRouter = express.Router();
 catalogRouter.get('/node-types', (req, res) => res.json(listNodeTypes()));
 catalogRouter.get('/credential-types', (req, res) => res.json(credentialTypes));
+/**
+ * Fills the editor's friendly dropdowns and per-column inputs from the live service (for example "which Notion
+ * databases can I pick?"). Body: { type, property, parameters }. Always answers 200 so the editor can show the reason.
+ */
+catalogRouter.post('/node-options', async (req, res) => {
+  const { type, property, parameters = {}, kind = 'options' } = req.body ?? {};
+  const def = getNodeType(type);
+  const fn = kind === 'fields' ? def?.loadFields : def?.loadOptions;
+  if (!fn) throw new HttpError(404, 'This node has no live choices');
+  const params = withDefaults(def, parameters);
+  const ctx = {
+    workspaceId: req.workspaceId, node: { type },
+    param: (name) => params[name],
+    credential: async () => (params.credential ? loadCredential(req.workspaceId, params.credential) : {}),
+  };
+  try {
+    const list = await fn(ctx, property);
+    res.json(kind === 'fields' ? { fields: list ?? [] } : { options: list ?? [] });
+  } catch (e) {
+    res.json({ [kind === 'fields' ? 'fields' : 'options']: [], error: String(e.message ?? e).split('\n')[0].slice(0, 300) });
+  }
+});
+
 catalogRouter.get('/usage', async (req, res) => res.json({ ...(await getUsage(req.workspaceId)), plans: Object.values(plans) }));
 
 /* -------------------------------- credentials --------------------------------- */
 export const credentialsRouter = express.Router();
-const isSecret = (typeId, field) => getCredentialType(typeId)?.fields.find((f) => f.name === field)?.type === 'password';
+// A credential whose type is not loaded right now (for example its plugin is switched off) shows NO values: every field counts as secret.
+const isSecret = (typeId, field) => {
+  const type = getCredentialType(typeId);
+  return type ? type.fields.find((f) => f.name === field)?.type === 'password' : true;
+};
 
 credentialsRouter.get('/', async (req, res) => {
   res.json(await all('SELECT id, name, type, created_at AS "createdAt" FROM credentials WHERE workspace_id = ? ORDER BY name', req.workspaceId));
+});
+
+/** "Test connection": works before saving (type + data) and after (id; blank secrets mean "keep the stored ones"). */
+credentialsRouter.post('/test', async (req, res) => {
+  const { id, type, data = {} } = req.body ?? {};
+  let useType = type;
+  let useData = data;
+  if (id) {
+    const row = await get('SELECT * FROM credentials WHERE id = ? AND workspace_id = ?', id, req.workspaceId);
+    if (!row) throw new HttpError(404, 'Credential not found');
+    useType = row.type;
+    const incoming = Object.fromEntries(Object.entries(data).filter(([k, v]) => !(isSecret(row.type, k) && v === '')));
+    useData = { ...decryptJson(row.data), ...incoming };
+  }
+  if (!useType) throw new HttpError(400, 'type is required');
+  res.json(await testCredential(useType, useData));
 });
 
 /** Never returns secret values — only which secret fields are set. */

@@ -1,0 +1,38 @@
+{
+  "_comment": "Copy this file to <data folder>/plugin-data/rest-connector/services/yourservice.json, edit it and restart LiteForeFlow (or press Reload on the Plugins page). Files starting with an underscore are ignored. See docs/PLUGINS.md.",
+
+  "id": "todoexample",
+  "name": "Todo Example",
+  "icon": "✅",
+  "description": "Shown under the node name in the palette.",
+
+  "baseUrl": "https://api.example.com/v1",
+  "headers": { "accept": "application/json" },
+
+  "auth": { "type": "bearer", "label": "API token" },
+  "_auth_types": "none | bearer | header (needs \"header\": \"X-API-Key\") | basic | query (needs \"params\": [{ \"name\": \"key\" }])",
+  "setup": ["Step 1 shown on the credential form", "Step 2"],
+  "test": { "path": "/me", "say": "Connected as {name}." },
+
+  "operations": [
+    {
+      "id": "listTasks", "label": "List tasks", "method": "GET", "path": "/tasks",
+      "result": "data.items",
+      "fields": [
+        { "name": "status", "label": "Status", "type": "options", "in": "query", "default": "open", "options": ["open", "done"] },
+        { "name": "project", "label": "Project", "type": "options", "in": "query", "options": { "from": "/projects", "value": "id", "label": "name" } }
+      ]
+    },
+    {
+      "id": "createTask", "label": "Create a task", "method": "POST", "path": "/tasks",
+      "fields": [
+        { "name": "title", "label": "Title", "type": "string", "in": "body", "required": true },
+        { "name": "notes", "label": "Notes", "type": "text", "in": "body" }
+      ]
+    },
+    {
+      "id": "getTask", "label": "Get one task", "method": "GET", "path": "/tasks/{id}",
+      "fields": [{ "name": "id", "label": "Task id", "type": "string", "in": "path", "required": true }]
+    }
+  ]
+}

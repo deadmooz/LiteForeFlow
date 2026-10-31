@@ -10,6 +10,7 @@ const RUN_ID = crypto.randomBytes(4).toString('hex');
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'liteforeflow-'));
 process.env.LITEFOREFLOW_SECRET = 'test-secret';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+process.env.OLLAMA_HOST = '127.0.0.1:1'; // nothing listens here, so "Ollama is not running" is testable even on a PC that has it
 process.env.AUTH_RATE_LIMIT_PER_MIN = '1000'; // this suite creates many accounts from one IP
 // The same suite runs against the default stack (SQLite + in-process queue) or the production stack
 // (Postgres + Redis/BullMQ) when TEST_DATABASE_URL / TEST_REDIS_URL are set.
@@ -58,6 +59,10 @@ before(async () => {
         return res.end('{"ok":true}');
       }
       if (req.url === '/always-fails') { res.statusCode = 500; return res.end('{"error":"boom"}'); }
+      if (req.url === '/api/tags') return res.end(JSON.stringify({ models: [{ name: 'llama3.2:latest' }, { name: 'qwen2.5:7b' }] }));
+      if (req.url === '/v1/chat/completions' && json.model === 'refuser' && json.reasoning_effort) { res.statusCode = 400; return res.end(JSON.stringify({ error: { message: '"refuser" does not support thinking' } })); }
+      if (req.url === '/v1/chat/completions' && json.model === 'thinker') return res.end(JSON.stringify({ choices: [{ finish_reason: 'length', message: { role: 'assistant', content: '', reasoning: 'hmm...' } }] }));
+      if (req.url === '/v1/chat/completions' && json.model === 'missing') { res.statusCode = 404; return res.end(JSON.stringify({ error: { message: "model 'missing' not found" } })); }
       if (req.url === '/v1/chat/completions') {
         const hasToolResult = json.messages.some((m) => m.role === 'tool');
         if (json.tools && !hasToolResult) {
@@ -323,6 +328,69 @@ test('AI: LLM node (JSON parse) and agent tool loop against an OpenAI-compatible
   assert.match(agent.text, /416\.5/);
 });
 
+test('AI: Ollama works through its OpenAI-style API, needs no API key, and explains the common problems', async () => {
+  const token = await newUser();
+  const cred = await api('POST', '/api/credentials', { token, body: { name: 'Local AI', type: 'ollamaApi', data: { baseUrl: mockBase } } });
+  assert.equal(cred.status, 201, JSON.stringify(cred.data));
+  const run = async (nodes) => {
+    const wf = await createWf(token, 'ollama', [node('t', 'trigger.manual', 'Start'), ...nodes], nodes.map((n, i) => edge(i ? nodes[i - 1].id : 't', n.id)));
+    return api('POST', `/api/workflows/${wf.id}/run`, { token });
+  };
+
+  seen.length = 0;
+  let r = await run([
+    node('l', 'ai.llm', 'Classify', { provider: 'ollama', credential: cred.data.id, model: 'llama3.2', prompt: 'help', parseJson: true }),
+    node('a', 'ai.agent', 'Agent', { provider: 'ollama', credential: cred.data.id, prompt: 'What is 17% of 2450?', tools: '["calculator"]' }),
+  ]);
+  assert.equal(r.data.status, 'success', JSON.stringify(r.data.error));
+  assert.deepEqual(r.data.results.l.output[0][0].json.parsed, { urgent: true, summary: 'down' });
+  assert.equal(r.data.results.a.output[0][0].json.steps[0].output, '416.5');
+  const sent = seen.filter((s) => s.url === '/v1/chat/completions');
+  assert.ok(sent.length >= 3);
+  assert.equal(sent[0].body.model, 'llama3.2');
+  assert.equal(sent[1].body.model, 'llama3.2', 'blank model falls back to llama3.2');
+  assert.ok(sent.every((s) => s.auth === undefined), 'no API key means no Authorization header');
+
+  r = await run([node('l', 'ai.llm', 'Missing', { provider: 'ollama', credential: cred.data.id, model: 'missing', prompt: 'hi' })]);
+  assert.equal(r.data.status, 'error');
+  assert.match(JSON.stringify(r.data), /ollama pull missing/);
+  assert.match(JSON.stringify(r.data), /Installed models: llama3\.2:latest, qwen2\.5:7b/);
+
+  // "Thinking" is off unless asked for: the model is told to answer directly (27x faster on a real thinking model), and a model that cannot switch it off still works
+  seen.length = 0;
+  r = await run([node('l', 'ai.llm', 'NoThink', { provider: 'ollama', credential: cred.data.id, model: 'llama3.2', prompt: 'hi' })]);
+  assert.equal(r.data.status, 'success', JSON.stringify(r.data));
+  assert.equal(seen.find((x) => x.url === '/v1/chat/completions').body.reasoning_effort, 'none', 'off is the default');
+  seen.length = 0;
+  r = await run([node('l', 'ai.llm', 'Think', { provider: 'ollama', credential: cred.data.id, model: 'llama3.2', prompt: 'hi', thinking: 'on' })]);
+  assert.equal(r.data.status, 'success');
+  assert.equal(seen.find((x) => x.url === '/v1/chat/completions').body.reasoning_effort, undefined, 'on sends nothing special');
+  seen.length = 0;
+  r = await run([node('l', 'ai.llm', 'Refuser', { provider: 'ollama', credential: cred.data.id, model: 'refuser', prompt: 'hi' })]);
+  assert.equal(r.data.status, 'success', `a model that cannot switch thinking off must still answer: ${JSON.stringify(r.data)}`);
+  const refuserCalls = seen.filter((x) => x.url === '/v1/chat/completions');
+  assert.equal(refuserCalls.length, 2, 'asked with the switch, then asked again without it');
+  assert.equal(refuserCalls[1].body.reasoning_effort, undefined);
+  seen.length = 0;
+  await run([node('l', 'ai.llm', 'Refuser2', { provider: 'ollama', credential: cred.data.id, model: 'refuser', prompt: 'again' })]);
+  assert.equal(seen.filter((x) => x.url === '/v1/chat/completions').length, 1, 'remembered: no second attempt for the same model');
+
+  // a thinking model that runs out of tokens must not return a silent empty answer
+  r = await run([node('l', 'ai.llm', 'Thinker', { provider: 'ollama', credential: cred.data.id, model: 'thinker', maxTokens: 40, prompt: 'hi' })]);
+  assert.equal(r.data.status, 'error');
+  assert.match(JSON.stringify(r.data), /Raise \\"Max tokens\\"/);
+
+  // no credential at all: uses OLLAMA_HOST, which is closed in this test
+  r = await run([node('l', 'ai.llm', 'Offline', { provider: 'ollama', prompt: 'hi' })]);
+  assert.equal(r.data.status, 'error');
+  assert.match(JSON.stringify(r.data), /Could not reach Ollama at http:\/\/127\.0\.0\.1:1/);
+
+  // OpenAI still insists on a credential
+  r = await run([node('l', 'ai.llm', 'NoKey', { provider: 'openai', prompt: 'hi' })]);
+  assert.equal(r.data.status, 'error');
+  assert.match(JSON.stringify(r.data), /No credential selected/);
+});
+
 test('plans: free tier limits active workflows and monthly runs', async () => {
   const token = await newUser();
   const mk = (i) => createWf(token, `w${i}`, [node('t', 'trigger.webhook', 'Hook', { path: `limit-${counter}-${i}`, method: 'POST' })], []);
@@ -401,13 +469,16 @@ test('workspace isolation and stripe signature', async () => {
 test('sandbox: memory bombs and host APIs are contained, large item counts stay fast', async () => {
   const token = await newUser();
 
-  const bomb = await createWf(token, 'bomb', [
-    node('t', 'trigger.manual', 'Start'),
-    node('c', 'data.code', 'Bomb', { mode: 'runOnce', code: 'const a = []; while (true) { a.push(new Array(1e6).fill(7)); }' }),
-  ], [edge('t', 'c')]);
-  const r1 = await api('POST', `/api/workflows/${bomb.id}/run`, { token });
-  assert.equal(r1.data.status, 'error');
-  assert.match(r1.data.error.message, /memory|timed out/i);
+  // The basic fallback sandbox (LITEFOREFLOW_SANDBOX=vm) has no memory cap by design, so this check only applies to isolated-vm.
+  if (process.env.LITEFOREFLOW_SANDBOX !== 'vm') {
+    const bomb = await createWf(token, 'bomb', [
+      node('t', 'trigger.manual', 'Start'),
+      node('c', 'data.code', 'Bomb', { mode: 'runOnce', code: 'const a = []; while (true) { a.push(new Array(1e6).fill(7)); }' }),
+    ], [edge('t', 'c')]);
+    const r1 = await api('POST', `/api/workflows/${bomb.id}/run`, { token });
+    assert.equal(r1.data.status, 'error');
+    assert.match(r1.data.error.message, /memory|timed out/i);
+  }
 
   const probe = await createWf(token, 'probe', [
     node('t', 'trigger.manual', 'Start'),

@@ -1,16 +1,35 @@
 {
   "name": "liteforeflow",
+  "version": "0.2.0",
+  "description": "LiteForeFlow, Docker edition: the same features as the Lite edition, plus Postgres, Redis queue and scalable workers.",
   "private": true,
-  "version": "0.1.0",
   "type": "module",
-  "workspaces": ["server", "web"],
-  "scripts": {
-    "dev": "concurrently -n api,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
-    "dev:server": "npm run dev -w server",
-    "dev:web": "npm run dev -w web",
-    "build": "npm run build -w web",
-    "start": "npm run start -w server",
-    "test": "npm test -w server"
+  "engines": {
+    "node": ">=22.13"
   },
-  "devDependencies": { "concurrently": "^9.1.0" }
+  "scripts": {
+    "prestart": "node scripts/preflight.cjs",
+    "start": "node --max-semi-space-size=2 --max-old-space-size=192 server/src/index.js",
+    "dev": "node --watch server/src/index.js",
+    "worker": "node --max-semi-space-size=2 --max-old-space-size=192 server/src/worker.js",
+    "test": "node --test --test-concurrency=1 server/test/api.test.js server/test/schedule.test.mjs server/test/plugins.test.mjs server/test/perf.test.mjs",
+    "qa": "node server/test/qa/qa.mjs",
+    "plugin:new": "node scripts/new-plugin.cjs",
+    "build": "npm install --prefix web && npm run build --prefix web",
+    "dev:web": "npm install --prefix web && npm run dev --prefix web",
+    "test:all": "node --test --test-concurrency=1 server/test/api.test.js server/test/schedule.test.mjs server/test/plugins.test.mjs server/test/perf.test.mjs server/test/distributed.test.js server/test/plugins-distributed.test.mjs"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^6.4.2",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "express-async-errors": "^3.1.1",
+    "ioredis": "^6.0.0",
+    "isolated-vm": "^7.0.1",
+    "jsonwebtoken": "^9.0.2",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.16",
+    "pg": "^8.13.1"
+  }
 }

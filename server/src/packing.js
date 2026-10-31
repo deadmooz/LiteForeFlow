@@ -10,7 +10,7 @@ const MIN_BYTES = 1024;
 
 export function pack(json) {
   if (json == null || json.length < MIN_BYTES) return json;
-  return PREFIX + zlib.gzipSync(json, { level: 6 }).toString('base64');
+  return PREFIX + zlib.gzipSync(json, { level: 3 }).toString('base64');
 }
 
 export function unpack(stored) {

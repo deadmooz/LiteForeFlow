@@ -1,13 +1,15 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom';
 import { api, auth, setUnauthorizedHandler } from './api.js';
 import Login from './pages/Login.jsx';
 import Workflows from './pages/Workflows.jsx';
-import Editor from './pages/Editor.jsx';
+// The editor (with its canvas library) is the heavy part: it is only fetched when a workflow is opened.
+const Editor = lazy(() => import('./pages/Editor.jsx'));
 import Templates from './pages/Templates.jsx';
 import Executions from './pages/Executions.jsx';
 import Credentials from './pages/Credentials.jsx';
 import Settings from './pages/Settings.jsx';
+import Plugins from './pages/Plugins.jsx';
 
 const Session = createContext(null);
 export const useSession = () => useContext(Session);
@@ -67,6 +69,7 @@ function Shell() {
           <NavLink to="/templates">Templates</NavLink>
           <NavLink to="/executions">Executions</NavLink>
           <NavLink to="/credentials">Credentials</NavLink>
+          <NavLink to="/plugins">Plugins</NavLink>
           <NavLink to="/settings">Usage &amp; plan</NavLink>
         </nav>
         <div className="sidebar-foot">
@@ -80,15 +83,18 @@ function Shell() {
         </div>
       </aside>
       <main className="content">
+        <Suspense fallback={<div className="center muted">Loading…</div>}>
         <Routes>
           <Route path="/" element={<Workflows />} />
           <Route path="/workflows/:id" element={<Editor />} />
           <Route path="/templates" element={<Templates />} />
           <Route path="/executions" element={<Executions />} />
           <Route path="/credentials" element={<Credentials />} />
+          <Route path="/plugins" element={<Plugins />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
+        </Suspense>
       </main>
     </div>
   );

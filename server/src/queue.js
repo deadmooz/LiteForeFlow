@@ -82,8 +82,9 @@ function createMemoryDriver() {
 
 /* ------------------------------------ bullmq ---------------------------------- */
 async function createBullDriver() {
-  const { Queue, Worker, QueueEvents } = await import('bullmq');
-  const { default: IORedis } = await import('ioredis');
+  let bull; let IORedis;
+  try { bull = await import('bullmq'); ({ default: IORedis } = await import('ioredis')); } catch { throw new Error('Redis queue support is not installed. Run:  npm run scale-up'); }
+  const { Queue, Worker, QueueEvents } = bull;
   const connection = new IORedis(config.redisUrl, { maxRetriesPerRequest: null });
   connection.on('error', (e) => console.error('[redis]', e.message));
   // BullMQ does not own connections we hand it, so every duplicate must be closed by us on shutdown.

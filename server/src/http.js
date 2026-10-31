@@ -56,8 +56,9 @@ export function isPrivateIp(ip) {
   return (b[0] & 0xfe) === 0xfc || (b[0] === 0xfe && (b[1] & 0xc0) >= 0x80) || b[0] === 0xff; // unique-local, link/site-local, multicast
 }
 
-async function assertAllowedHost(url) {
+async function assertAllowedHost(url, trustedOrigin) {
   if (!config.blockPrivateNetwork) return;
+  if (trustedOrigin && new URL(url).origin === trustedOrigin) return; // an address the server admin chose (e.g. OLLAMA_HOST)
   const { hostname } = new URL(url);
   const host = hostname.replace(/^\[|\]$/g, '');
   const addrs = net.isIP(host) ? [{ address: host }] : await dns.lookup(host, { all: true });
@@ -81,13 +82,13 @@ export function formEncode(obj, prefix = '', params = new URLSearchParams()) {
 
 export async function httpRequest({
   method = 'GET', url, headers = {}, query, body, bodyType = 'json',
-  timeoutMs = 30000, ignoreStatus = false, responseType = 'auto', signal,
+  timeoutMs = 30000, ignoreStatus = false, responseType = 'auto', signal, trustedOrigin,
 }) {
   let u;
   try { u = new URL(url); } catch { throw new Error(`Invalid URL: ${url}`); }
   if (!['http:', 'https:'].includes(u.protocol)) throw new Error('Only http(s) URLs are supported');
   for (const [k, v] of Object.entries(query ?? {})) if (v !== undefined && v !== null) u.searchParams.set(k, String(v));
-  await assertAllowedHost(u.toString());
+  await assertAllowedHost(u.toString(), trustedOrigin);
 
   const h = { ...headers };
   let payload;

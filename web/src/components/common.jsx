@@ -1,14 +1,32 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
+
+const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
 export function Modal({ title, onClose, children, wide }) {
+  const box = useRef(null);
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose();
+    // Keyboard users: move focus into the dialog, keep Tab inside it, and give focus back when it closes.
+    const before = document.activeElement;
+    const first = box.current?.querySelector('.modal-body input, .modal-body select, .modal-body textarea, .modal-body button, .modal-body a[href]');
+    (first ?? box.current)?.focus();
+    const onKey = (e) => {
+      if (e.key === 'Escape') { close.current(); return; }
+      if (e.key !== 'Tab' || !box.current) return;
+      const items = [...box.current.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+      if (!items.length) { e.preventDefault(); return; }
+      const [head, tail] = [items[0], items[items.length - 1]];
+      if (!box.current.contains(document.activeElement)) { e.preventDefault(); head.focus(); }
+      else if (e.shiftKey && document.activeElement === head) { e.preventDefault(); tail.focus(); }
+      else if (!e.shiftKey && document.activeElement === tail) { e.preventDefault(); head.focus(); }
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    return () => { window.removeEventListener('keydown', onKey); if (before?.isConnected) before.focus?.(); };
+  }, []);
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={box} tabIndex={-1} className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-head">
           <h2>{title}</h2>
           <button className="icon" onClick={onClose} aria-label="Close">✕</button>

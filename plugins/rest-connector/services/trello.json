@@ -1,0 +1,40 @@
+{
+  "id": "trello",
+  "name": "Trello",
+  "icon": "📋",
+  "description": "List boards and cards, and create cards on any list.",
+  "baseUrl": "https://api.trello.com/1",
+  "auth": {
+    "type": "query",
+    "params": [
+      { "name": "key", "label": "API key", "secret": false },
+      { "name": "token", "label": "Token" }
+    ]
+  },
+  "setup": [
+    "Open https://trello.com/power-ups/admin, create a Power-Up and generate an API key.",
+    "On the same page click the Token link next to the key and allow access.",
+    "Paste the API key and the token here."
+  ],
+  "test": { "path": "/members/me", "say": "Connected to Trello as {fullName}." },
+  "operations": [
+    { "id": "listBoards", "label": "List my boards", "method": "GET", "path": "/members/me/boards", "fields": [] },
+    {
+      "id": "listCards", "label": "List the cards on a list", "method": "GET", "path": "/lists/{list}/cards",
+      "fields": [
+        { "name": "board", "label": "Board", "type": "options", "in": "ui", "options": { "from": "/members/me/boards", "value": "id", "label": "name" } },
+        { "name": "list", "label": "List", "type": "options", "in": "path", "required": true, "options": { "from": "/boards/{board}/lists", "value": "id", "label": "name" }, "help": "Pick the board first, then the list." }
+      ]
+    },
+    {
+      "id": "createCard", "label": "Create a card", "method": "POST", "path": "/cards",
+      "fields": [
+        { "name": "board", "label": "Board", "type": "options", "in": "ui", "options": { "from": "/members/me/boards", "value": "id", "label": "name" } },
+        { "name": "list", "label": "List", "type": "options", "as": "idList", "in": "query", "required": true, "options": { "from": "/boards/{board}/lists", "value": "id", "label": "name" } },
+        { "name": "name", "label": "Card title", "type": "string", "in": "query", "required": true },
+        { "name": "desc", "label": "Description", "type": "text", "in": "query" },
+        { "name": "due", "label": "Due date", "type": "string", "in": "query", "placeholder": "2026-03-05T10:00:00Z" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "openweather",
+  "name": "OpenWeather",
+  "icon": "🌦️",
+  "description": "Current weather and a 5-day forecast for a city.",
+  "baseUrl": "https://api.openweathermap.org/data/2.5",
+  "auth": { "type": "query", "params": [{ "name": "apikey", "as": "appid", "label": "API key" }] },
+  "setup": [
+    "Create a free account at https://openweathermap.org and open My API keys.",
+    "Copy the key and paste it here. A new key can take up to two hours to start working."
+  ],
+  "test": { "path": "/weather?q=London", "say": "Connected. OpenWeather answered for {name}." },
+  "operations": [
+    {
+      "id": "current", "label": "Current weather", "method": "GET", "path": "/weather",
+      "fields": [
+        { "name": "city", "as": "q", "label": "City", "type": "string", "in": "query", "required": true, "placeholder": "London" },
+        { "name": "units", "label": "Units", "type": "options", "in": "query", "default": "metric", "options": [{ "value": "metric", "label": "Metric (°C)" }, { "value": "imperial", "label": "Imperial (°F)" }, { "value": "standard", "label": "Kelvin" }] }
+      ]
+    },
+    {
+      "id": "forecast", "label": "5-day forecast", "method": "GET", "path": "/forecast", "result": "list",
+      "fields": [
+        { "name": "city", "as": "q", "label": "City", "type": "string", "in": "query", "required": true, "placeholder": "London" },
+        { "name": "units", "label": "Units", "type": "options", "in": "query", "default": "metric", "options": [{ "value": "metric", "label": "Metric (°C)" }, { "value": "imperial", "label": "Imperial (°F)" }, { "value": "standard", "label": "Kelvin" }] }
+      ]
+    }
+  ]
+}
