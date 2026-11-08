@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
  * so the cost of scrolling does not depend on how many rows were loaded. Fixed row height keeps the maths trivial.
  * Scroll events are coalesced to one update per animation frame, and the end of the list asks for more rows (onEnd).
  */
-export default function VirtualList({ rows, rowHeight, columns, header, renderRow, rowKey, onEnd, height = 520, overscan = 6, footer }) {
+function VirtualList({ rows, rowHeight, columns, header, renderRow, rowKey, onEnd, height = 520, overscan = 6, footer }) {
   const box = useRef(null);
   const [top, setTop] = useState(0);
   const [viewport, setViewport] = useState(height);
@@ -49,3 +49,6 @@ export default function VirtualList({ rows, rowHeight, columns, header, renderRo
     </div>
   );
 }
+
+// Typing in a search box re-renders the page on every key; the list only needs to follow when its own inputs change.
+export default React.memo(VirtualList);

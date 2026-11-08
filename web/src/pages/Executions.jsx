@@ -6,7 +6,9 @@ import VirtualList from '../components/VirtualList.jsx';
 import { useDebounced, useRowHeight, useSlashFocus } from '../hooks.js';
 
 const PAGE = 100;
+const rowKey = (r) => r.id;
 const COLS = 'minmax(140px, 1.6fr) 96px 88px 176px 72px minmax(0, 2fr)';
+const HEADER = ['Workflow', 'Status', 'Mode', 'Started', 'Duration', 'Error'].map((h) => <span key={h} role="columnheader">{h}</span>);
 // Cheap fingerprint: a refresh that brought nothing new must not re-render the list.
 const fingerprint = (rows) => rows.map((r) => `${r.id}${r.status}${r.finishedAt ?? ''}`).join('|');
 
@@ -73,7 +75,7 @@ export default function Executions() {
     ? rows.filter((r) => `${r.workflowName} ${r.error?.message ?? ''} ${r.id}`.toLowerCase().includes(q))
     : rows), [rows, q]);
 
-  const renderRow = (e, style, key) => (
+  const renderRow = useCallback((e, style, key) => (
     <div key={key} className="vrow clickable" style={style} role="row" tabIndex={0}
       onClick={() => setOpenId(e.id)} onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setOpenId(e.id); } }}>
       <span role="cell"><Link to={`/workflows/${e.workflowId}`} onClick={(ev) => ev.stopPropagation()}>{e.workflowName}</Link></span>
@@ -83,7 +85,19 @@ export default function Executions() {
       <span role="cell">{fmtDuration(e.startedAt, e.finishedAt)}</span>
       <span role="cell" className="muted hide-sm">{e.error?.message}</span>
     </div>
-  );
+  ), []);
+
+  // Built once per change of its inputs, so the memoised list is not re-rendered while someone types.
+  const footer = useMemo(() => (!shown ? null : (
+            <>
+              <span>{shown.length.toLocaleString()} {q ? 'matching ' : ''}run{shown.length === 1 ? '' : 's'} loaded{more ? ' · scroll for more' : ''}</span>
+              <span className="row gap">
+                {error && <span className="error inline-msg" role="alert">{error}</span>}
+                {fresh && <button className="link" onClick={() => reload()}>New runs available · refresh</button>}
+                {more && <button className="link" onClick={loadMore}>Load more</button>}
+              </span>
+            </>
+  )), [shown?.length, q, more, error, fresh, reload, loadMore]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="page">
@@ -108,19 +122,10 @@ export default function Executions() {
             : shown.length === 0 ? <EmptyState icon="⌕" title="No match">Nothing in the {rows.length} loaded runs matches “{query}”. {more && 'Load more runs, or clear the search.'}</EmptyState>
               : (
                 <VirtualList
-                  rows={shown} rowHeight={rowHeight} columns={COLS} rowKey={(r) => r.id} renderRow={renderRow}
+                  rows={shown} rowHeight={rowHeight} columns={COLS} rowKey={rowKey} renderRow={renderRow}
                   onEnd={q ? undefined : loadMore}
-                  header={['Workflow', 'Status', 'Mode', 'Started', 'Duration', 'Error'].map((h) => <span key={h} role="columnheader">{h}</span>)}
-                  footer={(
-                    <>
-                      <span>{shown.length.toLocaleString()} {q ? 'matching ' : ''}run{shown.length === 1 ? '' : 's'} loaded{more ? ' · scroll for more' : ''}</span>
-                      <span className="row gap">
-                        {error && <span className="error inline-msg" role="alert">{error}</span>}
-                        {fresh && <button className="link" onClick={() => reload()}>New runs available · refresh</button>}
-                        {more && <button className="link" onClick={loadMore}>Load more</button>}
-                      </span>
-                    </>
-                  )}
+                  header={HEADER}
+                  footer={footer}
                 />
               )}
       {openId && <ExecutionModal id={openId} onClose={() => setOpenId(null)} />}

@@ -25,7 +25,7 @@ const outputLabel = (node, def, i) => {
   return null;
 };
 
-function FlowNode({ data, selected }) {
+const FlowNode = React.memo(function FlowNode({ data, selected }) {
   const { node, def, status } = data;
   const inputs = def.inputs ?? 1;
   const outs = outputCount(node, def);
@@ -47,7 +47,7 @@ function FlowNode({ data, selected }) {
       ))}
     </div>
   );
-}
+});
 const nodeTypes = { ff: FlowNode };
 
 const toRF = (node, def, status) => ({ id: node.id, type: 'ff', position: node.position ?? { x: 0, y: 0 }, data: { node, def, status } });

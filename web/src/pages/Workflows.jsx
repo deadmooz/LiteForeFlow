@@ -1,10 +1,32 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, fmtDate } from '../api.js';
 import { EmptyState, ErrorState, Loading, Modal } from '../components/common.jsx';
 import { useDebounced, useSlashFocus } from '../hooks.js';
 
 const TRIGGER_LABEL = { 'trigger.webhook': 'Webhook', 'trigger.cron': 'Schedule', 'trigger.rss': 'RSS', 'trigger.manual': 'Manual', 'trigger.error': 'Error' };
+
+/** One table row. Memoised: switching one workflow on does not re-render the others. */
+const WorkflowRow = React.memo(function WorkflowRow({ w, act }) {
+  return (
+    <tr key={w.id}>
+      <td data-label="Name"><Link to={`/workflows/${w.id}`}><b>{w.name}</b></Link></td>
+      <td data-label="Trigger">{[...new Set(w.triggers.map((t) => TRIGGER_LABEL[t] ?? t))].join(', ') || '—'}</td>
+      <td data-label="Nodes">{w.nodeCount}</td>
+      <td className="muted" data-label="Updated">{fmtDate(w.updatedAt)}</td>
+      <td data-label="Active">
+        <label className="switch" aria-label={`Toggle ${w.name}`}>
+          <input type="checkbox" checked={w.active} onChange={() => act(() => api(`/workflows/${w.id}/${w.active ? 'deactivate' : 'activate'}`, { method: 'POST' }))} />
+          <span>{w.active ? 'On' : 'Off'}</span>
+        </label>
+      </td>
+      <td className="actions">
+        <button className="link" onClick={() => act(() => api(`/workflows/${w.id}/duplicate`, { method: 'POST' }))}>Duplicate</button>
+        <button className="link danger" onClick={() => window.confirm(`Delete "${w.name}" and its execution history?`) && act(() => api(`/workflows/${w.id}`, { method: 'DELETE' }))}>Delete</button>
+      </td>
+    </tr>
+  );
+});
 
 export default function Workflows() {
   const [list, setList] = useState(null);
@@ -15,7 +37,14 @@ export default function Workflows() {
   const searchRef = useSlashFocus();
   const navigate = useNavigate();
 
-  const load = () => api('/workflows').then((l) => { setList(l); setError(''); }).catch((e) => setError(e.message));
+  const load = () => api('/workflows').then((fresh) => {
+    setList((prev) => {
+      if (!prev) return fresh;
+      const old = new Map(prev.map((w) => [w.id, w]));
+      return fresh.map((w) => (JSON.stringify(old.get(w.id)) === JSON.stringify(w) ? old.get(w.id) : w)); // unchanged rows keep their identity, so they skip rendering
+    });
+    setError('');
+  }).catch((e) => setError(e.message));
   const shown = useMemo(() => (q && list ? list.filter((w) => w.name.toLowerCase().includes(q)) : list), [list, q]);
   useEffect(() => { load(); }, []);
 
@@ -30,7 +59,7 @@ export default function Workflows() {
     navigate(`/workflows/${wf.id}`);
   };
 
-  const act = async (fn) => { try { await fn(); await load(); } catch (e) { setError(e.message); } };
+  const act = useCallback(async (fn) => { try { await fn(); await load(); } catch (e) { setError(e.message); } }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="page">
@@ -63,24 +92,7 @@ export default function Workflows() {
         <table className="table">
           <thead><tr><th>Name</th><th>Trigger</th><th>Nodes</th><th>Updated</th><th>Active</th><th /></tr></thead>
           <tbody>
-            {shown.map((w) => (
-              <tr key={w.id}>
-                <td data-label="Name"><Link to={`/workflows/${w.id}`}><b>{w.name}</b></Link></td>
-                <td data-label="Trigger">{[...new Set(w.triggers.map((t) => TRIGGER_LABEL[t] ?? t))].join(', ') || '—'}</td>
-                <td data-label="Nodes">{w.nodeCount}</td>
-                <td className="muted" data-label="Updated">{fmtDate(w.updatedAt)}</td>
-                <td data-label="Active">
-                  <label className="switch" aria-label={`Toggle ${w.name}`}>
-                    <input type="checkbox" checked={w.active} onChange={() => act(() => api(`/workflows/${w.id}/${w.active ? 'deactivate' : 'activate'}`, { method: 'POST' }))} />
-                    <span>{w.active ? 'On' : 'Off'}</span>
-                  </label>
-                </td>
-                <td className="actions">
-                  <button className="link" onClick={() => act(() => api(`/workflows/${w.id}/duplicate`, { method: 'POST' }))}>Duplicate</button>
-                  <button className="link danger" onClick={() => window.confirm(`Delete "${w.name}" and its execution history?`) && act(() => api(`/workflows/${w.id}`, { method: 'DELETE' }))}>Delete</button>
-                </td>
-              </tr>
-            ))}
+            {shown.map((w) => <WorkflowRow key={w.id} w={w} act={act} />)}
           </tbody>
         </table>
       )}
