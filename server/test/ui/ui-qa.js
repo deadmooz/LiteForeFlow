@@ -19,6 +19,10 @@
     await goto('Executions');
     await waitFor(() => $('.vbody'));
 
+    // UI-0 opening the page cold (arriving from another page) shows the list and not the crash screen
+    await goto('Workflows'); await goto('Executions'); await waitFor(() => $('.vbody') || $('.state.bad'));
+    add('UI-0', 'opening Executions from another page shows the list, not an error screen', !!$('.vbody') && !$('.state.bad'), $('.state.bad')?.textContent ?? '');
+
     // UI-1 fast fling: frames stay smooth, DOM stays tiny
     const body = $('.vbody'); const frames = []; let last = performance.now(); const t0 = last;
     await new Promise((res) => { const tick = (t) => { frames.push(t - last); last = t; body.scrollTop += 700; if (t - t0 < 2500) requestAnimationFrame(tick); else res(); }; requestAnimationFrame(tick); });
@@ -85,6 +89,15 @@
     await sleep(500);
     const dh = heap() - h0; const dn = nodes() - n0;
     add('UI-8', '150 page switches do not grow the DOM, and heap growth stays small', Math.abs(dn) < 60 && (Number.isNaN(dh) || dh < 25), `DOM ${n0} -> ${nodes()} (${dn >= 0 ? '+' : ''}${dn}), heap ${Number.isNaN(dh) ? 'n/a' : `${dh >= 0 ? '+' : ''}${dh.toFixed(1)} MB`}`);
+
+    // UI-10 typing must not re-render the list: no DOM change inside the list while the search box fills up (debounced + memoised)
+    const listEl = $('.vbody'); let mutations = 0;
+    const mo = new MutationObserver((m) => { mutations += m.length; }); mo.observe(listEl, { childList: true, subtree: true, attributes: true, characterData: true });
+    let typedText = '';
+    for (const ch of 'zzzzzzzz') { typedText += ch; setValue($('.search input'), typedText); await sleep(25); }
+    mo.disconnect(); const during = mutations;
+    await sleep(500); setValue($('.search input'), ''); await sleep(500);
+    add('UI-10', 'typing 8 characters causes no DOM change inside the list while the debounce is pending', during === 0, `mutations during typing: ${during}`);
 
     // UI-9 keyboard: "/" focuses the search, Enter on a row opens details, Esc closes
     document.activeElement?.blur?.();
