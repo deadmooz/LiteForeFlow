@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, lazy, Suspense } from 'react';
-import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { api, auth, setUnauthorizedHandler } from './api.js';
+import { ErrorState, Loading } from './components/common.jsx';
+import { applyTheme, getTheme } from './hooks.js';
 import Login from './pages/Login.jsx';
 import Workflows from './pages/Workflows.jsx';
 // The editor (with its canvas library) is the heavy part: it is only fetched when a workflow is opened.
@@ -57,8 +59,26 @@ export default function App() {
   );
 }
 
+/** A crash inside one page shows a message and a retry, not a blank screen; moving to another page resets it. */
+class Boundary extends React.Component {
+  state = { err: null };
+  static getDerivedStateFromError(err) { return { err }; }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return <div className="page"><ErrorState message={`This page hit an unexpected problem: ${this.state.err.message}`} onRetry={() => this.setState({ err: null })} /></div>;
+  }
+}
+
+const THEMES = ['auto', 'light', 'dark'];
+function ThemeToggle() {
+  const [theme, setTheme] = useState(getTheme);
+  const next = () => { const t = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]; applyTheme(t); setTheme(t); };
+  return <button className="theme-toggle" onClick={next} title="Switch between automatic, light and dark">Theme: {theme}</button>;
+}
+
 function Shell() {
   const { me, logout } = useSession();
+  const { pathname } = useLocation();
   const switchWorkspace = (id) => { auth.workspace = id; window.location.assign('/'); };
   return (
     <div className="shell">
@@ -79,11 +99,13 @@ function Shell() {
             </select>
           )}
           <div className="muted small">{me.user.email}</div>
+          <ThemeToggle />
           <button className="link" onClick={logout}>Sign out</button>
         </div>
       </aside>
       <main className="content">
-        <Suspense fallback={<div className="center muted">Loading…</div>}>
+        <Boundary key={pathname}>
+        <Suspense fallback={<div className="page"><Loading rows={6} /></div>}>
         <Routes>
           <Route path="/" element={<Workflows />} />
           <Route path="/workflows/:id" element={<Editor />} />
@@ -95,6 +117,7 @@ function Shell() {
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
         </Suspense>
+        </Boundary>
       </main>
     </div>
   );

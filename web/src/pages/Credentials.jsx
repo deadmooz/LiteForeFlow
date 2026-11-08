@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api, fmtDate } from '../api.js';
 import { CredentialModal } from '../components/ParamForm.jsx';
+import { Loading } from '../components/common.jsx';
 
 export default function Credentials() {
   const [list, setList] = useState(null);
@@ -22,7 +23,7 @@ export default function Credentials() {
       </div>
       <p className="muted">Encrypted at rest (AES-256-GCM). Secret values are never sent back to the browser.</p>
       {error && <div className="error">{error}</div>}
-      {!list ? <p className="muted">Loading…</p> : list.length === 0 ? (
+      {!list ? <Loading rows={5} /> : list.length === 0 ? (
         <div className="card empty"><p className="muted">No credentials yet. Add one here or directly from a node.</p></div>
       ) : (
         <table className="table">

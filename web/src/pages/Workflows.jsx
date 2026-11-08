@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, fmtDate } from '../api.js';
-import { Modal } from '../components/common.jsx';
+import { EmptyState, ErrorState, Loading, Modal } from '../components/common.jsx';
+import { useDebounced, useSlashFocus } from '../hooks.js';
 
 const TRIGGER_LABEL = { 'trigger.webhook': 'Webhook', 'trigger.cron': 'Schedule', 'trigger.rss': 'RSS', 'trigger.manual': 'Manual', 'trigger.error': 'Error' };
 
@@ -9,9 +10,13 @@ export default function Workflows() {
   const [list, setList] = useState(null);
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
+  const [query, setQuery] = useState('');
+  const q = useDebounced(query, 200).trim().toLowerCase();
+  const searchRef = useSlashFocus();
   const navigate = useNavigate();
 
-  const load = () => api('/workflows').then(setList).catch((e) => setError(e.message));
+  const load = () => api('/workflows').then((l) => { setList(l); setError(''); }).catch((e) => setError(e.message));
+  const shown = useMemo(() => (q && list ? list.filter((w) => w.name.toLowerCase().includes(q)) : list), [list, q]);
   useEffect(() => { load(); }, []);
 
   const create = async () => {
@@ -31,14 +36,21 @@ export default function Workflows() {
     <div className="page">
       <div className="page-head">
         <h1>Workflows</h1>
-        <div className="row gap">
+        <div className="toolbar">
+          {list?.length > 4 && (
+            <div className="search">
+              <input ref={searchRef} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search workflows  ( / )" aria-label="Search workflows" />
+            </div>
+          )}
           <button onClick={() => setImporting(true)}>Import from n8n</button>
           <Link to="/templates"><button>Browse templates</button></Link>
           <button className="primary" onClick={create}>＋ New workflow</button>
         </div>
       </div>
-      {error && <div className="error" role="alert">{error}</div>}
-      {!list ? <p className="muted">Loading…</p> : list.length === 0 ? (
+      {error && list && <div className="error" role="alert">{error}</div>}
+      {!list ? (error ? <ErrorState message={error} onRetry={() => { setError(''); load(); }} /> : <Loading rows={6} />) : shown.length === 0 && list.length > 0 ? (
+        <EmptyState icon="⌕" title="No match">No workflow is called “{query}”.</EmptyState>
+      ) : list.length === 0 ? (
         <div className="card empty">
           <h3>No workflows yet</h3>
           <p className="muted">Start from a template, import an n8n export, or build from scratch.</p>
@@ -51,7 +63,7 @@ export default function Workflows() {
         <table className="table">
           <thead><tr><th>Name</th><th>Trigger</th><th>Nodes</th><th>Updated</th><th>Active</th><th /></tr></thead>
           <tbody>
-            {list.map((w) => (
+            {shown.map((w) => (
               <tr key={w.id}>
                 <td data-label="Name"><Link to={`/workflows/${w.id}`}><b>{w.name}</b></Link></td>
                 <td data-label="Trigger">{[...new Set(w.triggers.map((t) => TRIGGER_LABEL[t] ?? t))].join(', ') || '—'}</td>

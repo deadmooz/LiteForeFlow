@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { Loading } from '../components/common.jsx';
 
 const STATUS = {
   ok: { label: 'On', cls: 'success' },
@@ -33,7 +34,7 @@ export default function Plugins() {
         <code> data/plugins</code>.
       </p>
       {error && <div className="error">{error}</div>}
-      {!list ? <p className="muted">Loading…</p> : (
+      {!list ? <Loading rows={5} /> : (
         <div className="stack">
           {list.map((p) => {
             const st = STATUS[p.status] ?? STATUS.error;
