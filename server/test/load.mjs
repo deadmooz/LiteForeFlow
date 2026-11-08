@@ -12,7 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith('--') ? [...acc, [a.slice(2), all[i + 1]?.startsWith('--') || all[i + 1] === undefined ? 'true' : all[i + 1]]] : acc), []));
-const MODE = args.mode ?? 'workflow';
+const MODE = args.mode ?? 'workflow'; // workflow | ingest | api
 const TOTAL = Number(args.total ?? 20000);
 const CONC = Number(args.conc ?? 64);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -102,7 +102,9 @@ await Promise.all(Array.from({ length: CONC }, async () => {
     const n = next; next += 1;
     const s = performance.now();
     try {
-      const r = await request('POST', '/webhook/load', event(n));
+      const r = MODE === 'api'
+        ? (n % 4 === 0 ? await request('GET', '/api/health') : await request('GET', n % 4 === 1 ? '/api/workflows' : n % 4 === 2 ? '/api/executions?limit=20' : '/api/me', undefined, token))
+        : await request('POST', '/webhook/load', event(n));
       if (r.status !== 200) { failed += 1; const k = `HTTP ${r.status}: ${r.text.slice(0, 80)}`; why[k] = (why[k] ?? 0) + 1; }
       bytes += r.bytes;
     } catch (e) { failed += 1; const k = `${e.code ?? e.name}`; why[k] = (why[k] ?? 0) + 1; }
@@ -118,6 +120,16 @@ await sleep(1500);
 const after = child ? await rssMb(child.pid) : NaN;
 const sorted = Array.from(lat).sort((a, b) => a - b);
 const pct = (p) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
+let recorded = 'n/a';
+if (dataDir && MODE !== 'api') {
+  await sleep(3000); // let the in-process queue finish what it accepted
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(path.join(dataDir, 'liteforeflow.db'));
+  const rows = db.prepare('SELECT status, COUNT(*) AS n FROM executions GROUP BY status').all();
+  db.close();
+  recorded = Object.fromEntries(rows.map((r) => [r.status, Number(r.n)]));
+  recorded.accepted = TOTAL - failed;
+}
 const dbBytes = dataDir ? fs.readdirSync(dataDir).filter((f) => f.startsWith('liteforeflow.db')).reduce((n, f) => n + fs.statSync(path.join(dataDir, f)).size, 0) : NaN;
 
 if (child) { child.kill(); await sleep(500); try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch { /* still closing */ } }
@@ -127,6 +139,6 @@ console.log(JSON.stringify({
   label: args.label ?? path.basename(dir), mode: MODE, requests: TOTAL, concurrency: CONC, failed, failedWhy: why,
   totalTime: `${f(secs, 1)} s (${f(secs / 60, 1)} min)`, throughput: `${f(TOTAL / secs)} req/s`,
   latencyMs: { p50: f(pct(0.5), 1), p95: f(pct(0.95), 1), p99: f(pct(0.99), 1), max: f(sorted[sorted.length - 1], 0) },
-  startup: child ? `${startupMs} ms` : 'n/a', rssMB: { idle: f(idle), peak: f(peak), afterLoad: f(after) },
+  recordedExecutions: recorded, startup: child ? `${startupMs} ms` : 'n/a', rssMB: { idle: f(idle), peak: f(peak), afterLoad: f(after) },
   dbSizeMB: f(dbBytes / 1048576, 1), jsonSentMB: f((TOTAL * JSON.stringify(event(1)).length) / 1048576),
 }));
