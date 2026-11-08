@@ -7,10 +7,6 @@ data
 .DS_Store
 *.stale*
 coverage
-.github\workflows
+.github/workflows/
 server/test/qa/*-results.json
 QA_REPORT.md
-runtime
-
-# benchmark output (numbers worth keeping are in docs/PERFORMANCE.md)
-server/test/bench/result-*.json
