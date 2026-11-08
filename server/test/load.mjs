@@ -56,7 +56,7 @@ let child = null; let dataDir = null; let startupMs = 0;
 if (!external) {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ff-load-'));
   const t0 = Date.now();
-  child = spawn(process.execPath, ['--max-semi-space-size=2', '--max-old-space-size=192', path.join(dir, 'server/src/index.js')], {
+  child = spawn(process.execPath, [...(args.nodeargs ?? '--max-semi-space-size=2 --max-old-space-size=192').split(' ').filter((x) => x && x !== 'none'), path.join(dir, 'server/src/index.js')], {
     cwd: dir, stdio: 'ignore',
     env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, LITEFOREFLOW_SECRET: 'load-test-secret-0123456789', NODE_ENV: 'production', AUTH_RATE_LIMIT_PER_MIN: '1000' },
   });
@@ -92,6 +92,7 @@ await request('POST', `/api/workflows/${wf.id}/activate`, undefined, token);
 const event = (n) => ({ n, id: `evt-${n}`, user: { id: n % 977, name: 'Load Test', tags: ['a', 'b', 'c'] }, items: Array.from({ length: 8 }, (_, i) => ({ sku: `SKU-${i}`, qty: i + 1, price: 9.99 })), note: 'x'.repeat(400) });
 
 const lat = new Float64Array(TOTAL);
+const why = {};
 let next = 0; let failed = 0; let bytes = 0; let peak = idle || 0;
 const sampler = child ? setInterval(async () => { peak = Math.max(peak, (await rssMb(child.pid)) || 0); }, 2000) : null;
 const progress = setInterval(() => process.stderr.write(`  ${next}/${TOTAL}\r`), 3000);
@@ -102,9 +103,9 @@ await Promise.all(Array.from({ length: CONC }, async () => {
     const s = performance.now();
     try {
       const r = await request('POST', '/webhook/load', event(n));
-      if (r.status !== 200) failed += 1;
+      if (r.status !== 200) { failed += 1; const k = `HTTP ${r.status}: ${r.text.slice(0, 80)}`; why[k] = (why[k] ?? 0) + 1; }
       bytes += r.bytes;
-    } catch { failed += 1; }
+    } catch (e) { failed += 1; const k = `${e.code ?? e.name}`; why[k] = (why[k] ?? 0) + 1; }
     lat[n] = performance.now() - s;
   }
 }));
@@ -123,7 +124,7 @@ if (child) { child.kill(); await sleep(500); try { fs.rmSync(dataDir, { recursiv
 agent.destroy();
 const f = (n, d = 0) => (Number.isFinite(n) ? n.toFixed(d) : 'n/a');
 console.log(JSON.stringify({
-  label: args.label ?? path.basename(dir), mode: MODE, requests: TOTAL, concurrency: CONC, failed,
+  label: args.label ?? path.basename(dir), mode: MODE, requests: TOTAL, concurrency: CONC, failed, failedWhy: why,
   totalTime: `${f(secs, 1)} s (${f(secs / 60, 1)} min)`, throughput: `${f(TOTAL / secs)} req/s`,
   latencyMs: { p50: f(pct(0.5), 1), p95: f(pct(0.95), 1), p99: f(pct(0.99), 1), max: f(sorted[sorted.length - 1], 0) },
   startup: child ? `${startupMs} ms` : 'n/a', rssMB: { idle: f(idle), peak: f(peak), afterLoad: f(after) },
