@@ -39,6 +39,9 @@ services:
       POSTGRES_USER: liteforeflow
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-liteforeflow}
       POSTGRES_DB: liteforeflow
+    # Every container keeps a small connection pool (up to 10): 200 leaves room for the API plus many workers.
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=128MB", "-c", "random_page_cost=1.1"]
+    shm_size: 256mb
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U liteforeflow"]
