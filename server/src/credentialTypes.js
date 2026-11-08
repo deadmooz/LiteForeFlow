@@ -106,7 +106,7 @@ const TESTS = {
     try {
       r = await httpRequest({ url: `${base}/api/tags`, headers: d.apiKey ? { authorization: `Bearer ${d.apiKey}` } : {}, timeoutMs: 8000, trustedOrigin: config.ollamaUrl });
     } catch (e) {
-      if (e.message === 'fetch failed') throw new Error(`Could not reach Ollama at ${base}. Is it running? Open the Ollama app (or run "ollama serve").`);
+      if (e.unreachable && e.name !== 'TimeoutError') throw new Error(`Could not reach Ollama at ${base}. Is it running? Open the Ollama app (or run "ollama serve").`);
       throw e;
     }
     const names = (r.data?.models ?? []).map((m) => m.name);

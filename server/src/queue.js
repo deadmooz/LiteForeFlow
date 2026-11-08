@@ -93,7 +93,9 @@ async function createBullDriver() {
   const name = config.queueName;
   const queue = new Queue(name, {
     connection,
-    defaultJobOptions: { attempts: 1, removeOnComplete: { age: 3600, count: 2000 }, removeOnFail: { age: 86400 } },
+    streams: { events: { maxLen: 1000 } }, // the event log (which carries each finished run's answer) is capped, not 10,000 entries long
+    // Results live in the executions table; Redis only needs to remember a finished job for as long as a caller may still ask for it.
+    defaultJobOptions: { attempts: 1, removeOnComplete: { age: 600, count: 500 }, removeOnFail: { age: 86400, count: 1000 } },
   });
   // Each in-flight call holds one short-lived 'closing' listener; many simultaneous webhooks are normal, not a leak.
   queue.setMaxListeners(Math.max(100, config.maxQueueDepth));
@@ -142,6 +144,11 @@ async function createBullDriver() {
       });
       worker.on('error', (e) => console.error('[worker]', e.message));
       worker.on('failed', (job, e) => console.error(`[worker] job ${job?.id} failed:`, e.message));
+      // A finished job no longer needs its payload (the trigger items can be megabytes; the run's data is in the database).
+      // Dropping it keeps Redis small no matter how many finished jobs are retained.
+      const slim = (job) => job?.updateData({ kind: job.data?.kind, executionId: job.data?.executionId }).catch(() => {});
+      worker.on('completed', slim);
+      worker.on('failed', slim);
       await worker.waitUntilReady();
     },
     startEvents: getEvents,

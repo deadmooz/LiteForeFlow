@@ -36,7 +36,7 @@ async function loadModels(ctx) {
   try {
     res = await httpRequest({ url: `${origin}/api/tags`, headers: cred.apiKey ? { authorization: `Bearer ${cred.apiKey}` } : {}, timeoutMs: 8000, trustedOrigin: config.ollamaUrl });
   } catch (e) {
-    if (e.message === 'fetch failed') throw new Error(`Could not reach Ollama at ${origin}. Is it running?`);
+    if (e.unreachable && e.name !== 'TimeoutError') throw new Error(`Could not reach Ollama at ${origin}. Is it running?`);
     throw e;
   }
   const names = (res.data?.models ?? []).map((m) => m.name);
@@ -85,7 +85,7 @@ async function ollamaChat(cred, body) {
     }
   } catch (e) {
     if (e.name === 'TimeoutError') throw new Error(`Ollama did not answer within 5 minutes. The model "${model}" may be too big for this computer; try a smaller one.`);
-    if (e.message === 'fetch failed') throw new Error(`Could not reach Ollama at ${origin}. Is it running? Open the Ollama app (or run "ollama serve"), or set the address in the credential.`);
+    if (e.unreachable && e.name !== 'TimeoutError') throw new Error(`Could not reach Ollama at ${origin}. Is it running? Open the Ollama app (or run "ollama serve"), or set the address in the credential.`);
     throw e;
   }
   if (res.ok) return res.data;
