@@ -95,6 +95,8 @@ async function createBullDriver() {
     connection,
     defaultJobOptions: { attempts: 1, removeOnComplete: { age: 3600, count: 2000 }, removeOnFail: { age: 86400 } },
   });
+  // Each in-flight call holds one short-lived 'closing' listener; many simultaneous webhooks are normal, not a leak.
+  queue.setMaxListeners(Math.max(100, config.maxQueueDepth));
   let worker = null;
   let events = null;
 

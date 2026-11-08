@@ -17,6 +17,9 @@ x-app: &app
     BLOCK_PRIVATE_NETWORK: ${BLOCK_PRIVATE_NETWORK:-true}
     ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
     MAX_CONCURRENCY: ${MAX_CONCURRENCY:-10}
+    # Sign-in / sign-up attempts allowed per minute from one address (raise it if many people share one office or proxy address).
+    AUTH_RATE_LIMIT_PER_MIN: ${AUTH_RATE_LIMIT_PER_MIN:-20}
+    HTTP_MAX_RESPONSE_MB: ${HTTP_MAX_RESPONSE_MB:-25}
     # Ollama (free local AI) runs on your host machine; containers reach it through host.docker.internal.
     OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
     # Plugins: the bundled ones are inside the image; put your own folders in ./plugins-user (read by every container).
@@ -39,6 +42,9 @@ services:
       POSTGRES_USER: liteforeflow
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-liteforeflow}
       POSTGRES_DB: liteforeflow
+    # Every container keeps a small connection pool (up to 10): 200 leaves room for the API plus many workers.
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=128MB", "-c", "random_page_cost=1.1"]
+    shm_size: 256mb
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U liteforeflow"]

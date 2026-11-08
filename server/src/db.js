@@ -110,7 +110,11 @@ async function createPostgres() {
   try { pg = (await import('pg')).default; } catch { throw new Error('Postgres support is not installed. Run:  npm run scale-up'); }
   pg.types.setTypeParser(20, (v) => parseInt(v, 10)); // COUNT(*) etc. come back as numbers, like SQLite
   const toPg = (sql) => { let i = 0; return sql.replace(/\?/g, () => { i += 1; return `$${i}`; }); };
-  const bind = (p) => p.map((v) => (v === undefined ? null : v));
+  // Postgres cannot store a NUL character in text and answers with an internal error; tell the caller what is wrong instead.
+  const bind = (p) => p.map((v) => {
+    if (typeof v === 'string' && v.includes('\u0000')) throw Object.assign(new Error('Text cannot contain the NUL (zero) character'), { status: 400 });
+    return v === undefined ? null : v;
+  });
 
   const schema = config.pgSchema;
   if (schema) {

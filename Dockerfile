@@ -15,7 +15,9 @@ WORKDIR /app
 # The toolchain is only used if isolated-vm has no prebuilt binary for this platform.
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json .npmrc ./
-RUN npm ci --omit=dev
+# The cache mount makes rebuilds fast. Afterwards drop what the final image never uses: the packed tarball and the
+# prebuilt binaries of other platforms (about 20 MB). If isolated-vm was compiled here, its build/ folder is untouched.
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev  && rm -f node_modules/isolated-vm/*.tgz  && case "$(uname -m)" in x86_64) A=x64;; aarch64) A=arm64;; *) A=none;; esac  && if [ "$A" != none ]; then find node_modules/isolated-vm/prebuilds -mindepth 1 -maxdepth 1 ! -name "linux-$A" -exec rm -rf {} +; fi
 
 # --- 3) the small final image ----------------------------------------------------------------------------------
 FROM node:24-bookworm-slim
@@ -33,5 +35,5 @@ RUN mkdir /data && chown node:node /data
 USER node
 VOLUME /data
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://localhost:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD node -e "fetch('http://localhost:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "server/src/index.js"]

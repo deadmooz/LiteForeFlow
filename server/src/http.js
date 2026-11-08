@@ -80,6 +80,49 @@ export function formEncode(obj, prefix = '', params = new URLSearchParams()) {
   return params;
 }
 
+/** Reads the answer, but stops at HTTP_MAX_RESPONSE_MB: one huge download must not take the whole server's memory. */
+async function readLimited(res, host) {
+  const limit = config.httpMaxResponseBytes;
+  const tooBig = () => new Error(`The answer from ${host} is larger than ${Math.round(limit / 1048576)} MB, the most a block may download (setting HTTP_MAX_RESPONSE_MB). Ask the service for less (paging, filters).`);
+  const declared = Number(res.headers.get('content-length'));
+  if (declared > limit) { res.body?.cancel().catch(() => {}); throw tooBig(); }
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) { reader.cancel().catch(() => {}); throw tooBig(); }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, size).toString('utf8');
+}
+
+const NET_REASONS = {
+  ENOTFOUND: 'no server has that name - check the address', EAI_AGAIN: 'the name could not be looked up - check your internet connection',
+  ECONNREFUSED: 'the connection was refused - is the service running on that port?', ECONNRESET: 'the connection was dropped',
+  ETIMEDOUT: 'the connection timed out', EHOSTUNREACH: 'the host cannot be reached', ENETUNREACH: 'the network cannot be reached',
+  CERT_HAS_EXPIRED: 'its security certificate has expired', DEPTH_ZERO_SELF_SIGNED_CERT: 'it uses a self-signed certificate',
+  UNABLE_TO_VERIFY_LEAF_SIGNATURE: 'its security certificate cannot be verified', ERR_TLS_CERT_ALTNAME_INVALID: 'its security certificate is for another name',
+};
+
+/**
+ * fetch only says "fetch failed"; this says which host and why. The original error stays as `cause`, timeouts keep
+ * the name TimeoutError and a cancelled run stays an AbortError, so callers can still tell them apart.
+ */
+function networkError(e, host, timeoutMs) {
+  if (e.name === 'AbortError') return e;
+  const code = e.cause?.code;
+  const reason = e.name === 'TimeoutError' ? `no answer within ${Math.round(timeoutMs / 1000)} seconds`
+    : NET_REASONS[code] ?? (code ? `network error ${code}` : e.cause?.message || e.message);
+  const err = new Error(`Could not reach ${host}: ${reason}`, { cause: e.cause ?? e });
+  if (e.name === 'TimeoutError') err.name = 'TimeoutError';
+  err.unreachable = true;
+  return err;
+}
+
 export async function httpRequest({
   method = 'GET', url, headers = {}, query, body, bodyType = 'json',
   timeoutMs = 30000, ignoreStatus = false, responseType = 'auto', signal, trustedOrigin,
@@ -105,12 +148,20 @@ export async function httpRequest({
     }
   }
 
-  const res = await fetch(u, {
-    method, headers: h, body: payload,
-    signal: signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), signal]) : AbortSignal.timeout(timeoutMs),
-    redirect: config.blockPrivateNetwork ? 'manual' : 'follow',
-  });
-  const text = await res.text();
+  let res;
+  try {
+    res = await fetch(u, {
+      method, headers: h, body: payload,
+      signal: signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), signal]) : AbortSignal.timeout(timeoutMs),
+      redirect: config.blockPrivateNetwork ? 'manual' : 'follow',
+    });
+  } catch (e) {
+    throw networkError(e, u.host, timeoutMs);
+  }
+  let text;
+  try { text = await readLimited(res, u.host); } catch (e) {
+    throw e.name === 'TimeoutError' || e.cause ? networkError(e, u.host, timeoutMs) : e; // cut off half-way through the answer
+  }
   let data = text;
   const ct = res.headers.get('content-type') || '';
   if (responseType === 'json' || (responseType === 'auto' && (ct.includes('json') || /^\s*[[{]/.test(text)))) {
@@ -118,7 +169,8 @@ export async function httpRequest({
   }
   const out = { status: res.status, ok: res.ok, headers: Object.fromEntries(res.headers), data };
   if (!res.ok && !ignoreStatus) {
-    const err = new Error(`HTTP ${res.status} ${res.statusText}: ${truncate(text, 300)}`);
+    const said = text.trim();
+    const err = new Error(`HTTP ${res.status} ${res.statusText}${said && said !== '{}' && said !== '[]' ? `: ${truncate(said, 300)}` : ''}`); // no ": {}" for an empty answer
     err.response = out;
     throw err;
   }

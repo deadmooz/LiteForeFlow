@@ -68,6 +68,8 @@ export const config = {
   // Set SAVE_SUCCESS_DATA=false to keep only a one-line record of successful runs (errors always keep full data).
   saveSuccessData: env.SAVE_SUCCESS_DATA !== 'false',
   authRateLimitPerMin: Number(env.AUTH_RATE_LIMIT_PER_MIN) || 20,
+  // Largest answer a block may download (MB). Above it the call fails cleanly instead of filling the server's memory.
+  httpMaxResponseBytes: Math.max(1, Number(env.HTTP_MAX_RESPONSE_MB) || 25) * 1048576,
   allowSignup: env.ALLOW_SIGNUP !== 'false',
   isProd: env.NODE_ENV === 'production',
   stripe: {
