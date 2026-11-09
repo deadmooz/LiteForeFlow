@@ -420,3 +420,20 @@ input:not([type=checkbox]):not([type=radio]):focus, select:focus, textarea:focus
 .react-flow__minimap, .react-flow__controls { box-shadow: var(--shadow-sm); border-radius: var(--r-button); overflow: hidden; }
 .palette-item { background: none; box-shadow: none; border-radius: var(--r-button); }
 .palette-item:hover { background: var(--surface-2) !important; box-shadow: none; }
+
+/* editor: insert a step onto a line, the + on a line, the step menu, and the multi-select hint */
+.react-flow__edge.insert-target .react-flow__edge-path { stroke: var(--primary); stroke-width: 3; stroke-dasharray: 7 5; }
+.react-flow__node.ff-settle { transition: transform .18s ease; }
+.insert-chip { position: absolute; z-index: 25; transform: translate(-50%, -160%); padding: 5px 12px; border-radius: var(--r-pill); background: var(--primary); color: var(--primary-text); font-size: 12px; font-weight: 500; white-space: nowrap; box-shadow: var(--shadow-md); pointer-events: none; }
+.insert-chip kbd { background: rgba(255, 255, 255, .22); border-color: rgba(255, 255, 255, .4); color: inherit; }
+.insert-plus { position: absolute; z-index: 25; width: 26px; height: 26px; min-height: 0; padding: 0; transform: translate(-50%, -50%); border-radius: 50%; background: var(--primary); color: var(--primary-text); font-size: 18px; line-height: 1; box-shadow: var(--shadow-md); }
+.insert-plus:hover:not(:disabled) { background: var(--primary-hover); }
+/* the global button:active rule would otherwise replace this button's centring transform and make it jump away from the pointer mid-click */
+.insert-plus:active:not(:disabled) { transform: translate(-50%, -50%) scale(.94); background: var(--primary-press); }
+.insert-picker { position: absolute; z-index: 30; width: 300px; max-width: calc(100% - 16px); transform: translate(-50%, 14px); border-radius: var(--r-container); background: var(--surface); box-shadow: var(--shadow-xl), inset 0 0 0 1px var(--border); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.insert-picker ul { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.insert-picker li { padding: 6px 8px; border-radius: 6px; cursor: pointer; display: grid; grid-template-columns: auto 1fr; gap: 0 8px; align-items: baseline; }
+.insert-picker li small { grid-column: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.insert-picker li.on { background: var(--wash); }
+.select-hint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 20; padding: 6px 14px; border-radius: var(--r-pill); background: var(--surface); box-shadow: var(--shadow-sm), inset 0 0 0 1px var(--border); font-size: 12px; color: var(--text-2); white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; }
+.alert-settings { border-top: 1px solid var(--divider); padding-top: 12px; margin-top: 4px; }
