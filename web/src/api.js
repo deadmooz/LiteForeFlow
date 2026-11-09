@@ -33,4 +33,21 @@ export async function api(path, { method = 'GET', body } = {}) {
 }
 
 export const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
+const rtf = typeof Intl !== 'undefined' && Intl.RelativeTimeFormat ? new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }) : null;
+/** "5 minutes ago", "yesterday", "Mar 3": how people say it. The exact time stays available as a tooltip (fmtDate). */
+export function fmtAgo(iso) {
+  if (!iso) return '—';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t) || !rtf) return fmtDate(iso);
+  const s = Math.round((t - Date.now()) / 1000);
+  const abs = Math.abs(s);
+  if (abs < 45) return 'just now';
+  if (abs < 2700) return rtf.format(Math.round(s / 60), 'minute');
+  if (abs < 79200) return rtf.format(Math.round(s / 3600), 'hour');
+  if (abs < 6 * 86400) return rtf.format(Math.round(s / 86400), 'day');
+  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(abs > 300 * 86400 ? { year: 'numeric' } : {}) });
+}
+export const greeting = (d = new Date()) => { const h = d.getHours(); return h < 5 ? 'Working late' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; };
+export const firstName = (user) => String(user?.name || user?.email || '').trim().split(/[\s@.]/)[0] || 'there';
+export const initials = (user) => { const n = String(user?.name || user?.email || '?').trim().split(/\s+/); return ((n[0]?.[0] ?? '?') + (n.length > 1 ? n[n.length - 1][0] : '')).toUpperCase(); };
 export const fmtDuration = (a, b) => (a && b ? `${((new Date(b) - new Date(a)) / 1000).toFixed(1)}s` : '—');

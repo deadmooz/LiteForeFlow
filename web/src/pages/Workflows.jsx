@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, fmtDate } from '../api.js';
+import { api, fmtAgo, fmtDate, firstName, greeting } from '../api.js';
+import { useSession } from '../App.jsx';
 import { EmptyState, ErrorState, Loading, Modal } from '../components/common.jsx';
 import { useDebounced, useSlashFocus } from '../hooks.js';
 
@@ -13,7 +14,7 @@ const WorkflowRow = React.memo(function WorkflowRow({ w, act }) {
       <td data-label="Name"><Link to={`/workflows/${w.id}`}><b>{w.name}</b></Link></td>
       <td data-label="Trigger">{[...new Set(w.triggers.map((t) => TRIGGER_LABEL[t] ?? t))].join(', ') || '—'}</td>
       <td data-label="Nodes">{w.nodeCount}</td>
-      <td className="muted" data-label="Updated">{fmtDate(w.updatedAt)}</td>
+      <td className="muted" data-label="Updated" title={fmtDate(w.updatedAt)}>{fmtAgo(w.updatedAt)}</td>
       <td data-label="Active">
         <label className="switch" aria-label={`Toggle ${w.name}`}>
           <input type="checkbox" checked={w.active} onChange={() => act(() => api(`/workflows/${w.id}/${w.active ? 'deactivate' : 'activate'}`, { method: 'POST' }))} />
@@ -32,6 +33,7 @@ export default function Workflows() {
   const [list, setList] = useState(null);
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
+  const { me } = useSession();
   const [query, setQuery] = useState('');
   const q = useDebounced(query, 200).trim().toLowerCase();
   const searchRef = useSlashFocus();
@@ -45,6 +47,13 @@ export default function Workflows() {
     });
     setError('');
   }).catch((e) => setError(e.message));
+  const summary = useMemo(() => {
+    if (!list) return 'Here is what is running.';
+    if (list.length === 0) return 'Nothing here yet. Let us build your first one.';
+    const on = list.filter((w) => w.active).length;
+    if (on === 0) return `You have ${list.length} workflow${list.length === 1 ? '' : 's'}, and none are switched on yet.`;
+    return `${on} of your ${list.length} workflow${list.length === 1 ? ' is' : 's are'} switched on and doing the work for you.`;
+  }, [list]);
   const shown = useMemo(() => (q && list ? list.filter((w) => w.name.toLowerCase().includes(q)) : list), [list, q]);
   useEffect(() => { load(); }, []);
 
@@ -64,7 +73,10 @@ export default function Workflows() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Workflows</h1>
+        <div className="hello">
+          <h1>{greeting()}, <span className="name">{firstName(me?.user)}</span></h1>
+          <p>{summary}</p>
+        </div>
         <div className="toolbar">
           {list?.length > 4 && (
             <div className="search">
@@ -81,8 +93,8 @@ export default function Workflows() {
         <EmptyState icon="⌕" title="No match">No workflow is called “{query}”.</EmptyState>
       ) : list.length === 0 ? (
         <div className="card empty">
-          <h3>No workflows yet</h3>
-          <p className="muted">Start from a template, import an n8n export, or build from scratch.</p>
+          <h3>Your first workflow is a few clicks away</h3>
+          <p className="muted">Pick a template to see how it works, bring one over from n8n, or start with a blank canvas.</p>
           <div className="row gap center-x">
             <Link to="/templates"><button className="primary">Browse templates</button></Link>
             <button onClick={create}>Start from scratch</button>

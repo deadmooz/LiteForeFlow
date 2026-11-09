@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, fmtDate, fmtDuration } from '../api.js';
+import { api, fmtAgo, fmtDate, fmtDuration } from '../api.js';
 import { EmptyState, ErrorState, Loading, Modal, NodeResult, StatusBadge } from '../components/common.jsx';
 import VirtualList from '../components/VirtualList.jsx';
 import { useDebounced, useRowHeight, useSlashFocus } from '../hooks.js';
@@ -81,7 +81,7 @@ export default function Executions() {
       <span role="cell"><Link to={`/workflows/${e.workflowId}`} onClick={(ev) => ev.stopPropagation()}>{e.workflowName}</Link></span>
       <span role="cell"><StatusBadge status={e.status} /></span>
       <span role="cell" className="hide-sm">{e.mode}</span>
-      <span role="cell" className="muted">{fmtDate(e.startedAt)}</span>
+      <span role="cell" className="muted" title={fmtDate(e.startedAt)}>{fmtAgo(e.startedAt)}</span>
       <span role="cell">{fmtDuration(e.startedAt, e.finishedAt)}</span>
       <span role="cell" className="muted hide-sm">{e.error?.message}</span>
     </div>

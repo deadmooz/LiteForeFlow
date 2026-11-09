@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { api, auth, setUnauthorizedHandler } from './api.js';
+import { api, auth, firstName, initials, setUnauthorizedHandler } from './api.js';
 import { ErrorState, Loading } from './components/common.jsx';
 import { applyTheme, getTheme } from './hooks.js';
 import Login from './pages/Login.jsx';
@@ -72,8 +72,12 @@ class Boundary extends React.Component {
 const THEMES = ['auto', 'light', 'dark'];
 function ThemeToggle() {
   const [theme, setTheme] = useState(getTheme);
-  const next = () => { const t = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]; applyTheme(t); setTheme(t); };
-  return <button className="theme-toggle" onClick={next} title="Switch between automatic, light and dark">Theme: {theme}</button>;
+  const pick = (t) => { applyTheme(t); setTheme(t); };
+  return (
+    <div className="theme-seg" role="group" aria-label="Theme">
+      {THEMES.map((t) => <button key={t} aria-pressed={theme === t} onClick={() => pick(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}
+    </div>
+  );
 }
 
 function Shell() {
@@ -90,7 +94,7 @@ function Shell() {
           <NavLink to="/executions">Executions</NavLink>
           <NavLink to="/credentials">Credentials</NavLink>
           <NavLink to="/plugins">Plugins</NavLink>
-          <NavLink to="/settings">Usage &amp; plan</NavLink>
+          <NavLink to="/settings" title="Usage and plan">Plan</NavLink>
         </nav>
         <div className="sidebar-foot">
           {me.workspaces.length > 1 && (
@@ -98,7 +102,10 @@ function Shell() {
               {me.workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
           )}
-          <div className="muted small">{me.user.email}</div>
+          <div className="who">
+            <span className="avatar" aria-hidden="true">{initials(me.user)}</span>
+            <div><b>{me.user.name || firstName(me.user)}</b><small title={me.user.email}>{me.user.email}</small></div>
+          </div>
           <ThemeToggle />
           <button className="link" onClick={logout}>Sign out</button>
         </div>

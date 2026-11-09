@@ -37,7 +37,8 @@ export function Modal({ title, onClose, children, wide }) {
   );
 }
 
-export const StatusBadge = ({ status }) => <span className={`badge ${status}`}>{status}</span>;
+const STATUS_WORDS = { success: 'Succeeded', error: 'Failed', queued: 'Waiting', running: 'Running', skipped: 'Skipped' };
+export const StatusBadge = ({ status }) => <span className={`badge ${status}`}>{STATUS_WORDS[status] ?? status}</span>;
 
 /*
  * Shows JSON without ever serialising more than `max` characters. A run can hold hundreds of thousands of items;
@@ -90,7 +91,7 @@ export function ErrorState({ message, onRetry }) {
   return (
     <div className="card state bad" role="alert">
       <div className="state-icon" aria-hidden="true">!</div>
-      <h3 style={{ margin: 0 }}>Something went wrong</h3>
+      <h3 style={{ margin: 0 }}>That did not work</h3>
       <p className="muted">{message}</p>
       {onRetry && <button className="primary" onClick={onRetry}>Try again</button>}
     </div>
