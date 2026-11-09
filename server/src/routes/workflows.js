@@ -7,6 +7,7 @@ import { activateWorkflow, deactivateWorkflow } from '../scheduler.js';
 import { validateWorkflow } from '../engine.js';
 import { getNodeType, withDefaults } from '../nodes/index.js';
 import { parseStored } from '../packing.js';
+import { sanitizeAlerts, assertAlertsUsable, testAlert, alertStatus } from '../alerts.js';
 
 export const workflowsRouter = express.Router();
 
@@ -32,6 +33,17 @@ export async function createWorkflow(workspaceId, name, definition, settings = {
   return loadWorkflow(id, workspaceId);
 }
 
+/** Settings are free-form, except the alert block, which is checked so a typo cannot silently turn alerts into nothing. */
+async function cleanSettings(workspaceId, settings) {
+  if (settings === undefined || settings === null) return undefined;
+  if (typeof settings !== 'object' || Array.isArray(settings)) throw new HttpError(400, 'settings must be an object');
+  const out = { ...settings };
+  if ('alerts' in out) {
+    try { out.alerts = sanitizeAlerts(out.alerts); await assertAlertsUsable(workspaceId, out.alerts); } catch (e) { throw new HttpError(e.status ?? 400, e.message); }
+  }
+  return out;
+}
+
 const mustFind = async (req) => {
   const wf = await loadWorkflow(req.params.id, req.workspaceId);
   if (!wf) throw new HttpError(404, 'Workflow not found');
@@ -45,7 +57,7 @@ workflowsRouter.get('/', async (req, res) => {
 workflowsRouter.post('/', async (req, res) => {
   const { name, definition, settings } = req.body ?? {};
   const def = definition ? checkDefinition(definition) : { nodes: [], connections: [] };
-  res.status(201).json(await createWorkflow(req.workspaceId, name, def, settings));
+  res.status(201).json(await createWorkflow(req.workspaceId, name, def, (await cleanSettings(req.workspaceId, settings)) ?? {}));
 });
 
 workflowsRouter.get('/:id', async (req, res) => res.json(await mustFind(req)));
@@ -54,9 +66,10 @@ workflowsRouter.put('/:id', async (req, res) => {
   const wf = await mustFind(req);
   const { name, definition, settings } = req.body ?? {};
   const def = definition ? checkDefinition(definition) : wf.definition;
+  const cleanSet = (await cleanSettings(req.workspaceId, settings)) ?? wf.settings;
   await run(
     'UPDATE workflows SET name = ?, definition = ?, settings = ?, updated_at = ? WHERE id = ?',
-    name ? String(name).slice(0, 120) : wf.name, JSON.stringify(def), JSON.stringify(settings ?? wf.settings), now(), wf.id,
+    name ? String(name).slice(0, 120) : wf.name, JSON.stringify(def), JSON.stringify(cleanSet), now(), wf.id,
   );
   let updated = await loadWorkflow(wf.id, req.workspaceId);
   let warning;
@@ -76,6 +89,18 @@ workflowsRouter.delete('/:id', async (req, res) => {
   await run('DELETE FROM executions WHERE workflow_id = ?', wf.id);
   await run('DELETE FROM workflows WHERE id = ?', wf.id);
   res.status(204).end();
+});
+
+workflowsRouter.post('/:id/alerts/test', async (req, res) => {
+  const wf = await mustFind(req);
+  const alerts = req.body?.alerts ?? wf.settings?.alerts;
+  if (!alerts) return res.json({ ok: false, message: 'Set up the alert first, then send a test.' });
+  res.json(await testAlert(req.workspaceId, wf, alerts));
+});
+
+workflowsRouter.get('/:id/alerts/status', async (req, res) => {
+  const wf = await mustFind(req);
+  res.json(await alertStatus(wf.id));
 });
 
 workflowsRouter.post('/:id/duplicate', async (req, res) => {

@@ -20,6 +20,8 @@ x-app: &app
     # Sign-in / sign-up attempts allowed per minute from one address (raise it if many people share one office or proxy address).
     AUTH_RATE_LIMIT_PER_MIN: ${AUTH_RATE_LIMIT_PER_MIN:-20}
     HTTP_MAX_RESPONSE_MB: ${HTTP_MAX_RESPONSE_MB:-25}
+    # Failure alerts: at most one message per workflow in this many minutes (0 = no limit).
+    ALERT_COOLDOWN_MIN: ${ALERT_COOLDOWN_MIN:-10}
     # Ollama (free local AI) runs on your host machine; containers reach it through host.docker.internal.
     OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
     # Plugins: the bundled ones are inside the image; put your own folders in ./plugins-user (read by every container).

@@ -12,12 +12,12 @@
     "start": "node --max-semi-space-size=2 --max-old-space-size=192 server/src/index.js",
     "dev": "node --watch server/src/index.js",
     "worker": "node --max-semi-space-size=2 --max-old-space-size=192 server/src/worker.js",
-    "test": "node --test --test-concurrency=1 server/test/api.test.js server/test/schedule.test.mjs server/test/plugins.test.mjs server/test/perf.test.mjs",
+    "test": "node --test --test-concurrency=1 server/test/api.test.js server/test/schedule.test.mjs server/test/plugins.test.mjs server/test/perf.test.mjs server/test/alerts.test.mjs web/test/flow.test.mjs",
     "qa": "node server/test/qa/qa.mjs",
     "plugin:new": "node scripts/new-plugin.cjs",
     "build": "npm install --prefix web && npm run build --prefix web",
     "dev:web": "npm install --prefix web && npm run dev --prefix web",
-    "test:all": "node --test --test-concurrency=1 server/test/api.test.js server/test/schedule.test.mjs server/test/plugins.test.mjs server/test/perf.test.mjs server/test/distributed.test.js server/test/plugins-distributed.test.mjs"
+    "test:all": "node --test --test-concurrency=1 server/test/api.test.js server/test/schedule.test.mjs server/test/plugins.test.mjs server/test/perf.test.mjs server/test/distributed.test.js server/test/plugins-distributed.test.mjs server/test/alerts.test.mjs web/test/flow.test.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

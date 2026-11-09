@@ -98,7 +98,7 @@ export function CredentialModal({ typeId, onClose, onSaved, existing }) {
   );
 }
 
-function CredentialSelect({ prop, value, onChange, values, credentials, reloadCredentials }) {
+export function CredentialSelect({ prop, value, onChange, values, credentials, reloadCredentials }) {
   const [creating, setCreating] = useState(false);
   const types = prop.credentialTypeBy
     ? [prop.credentialTypeBy.map[values[prop.credentialTypeBy.param]]]

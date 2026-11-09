@@ -25,6 +25,7 @@ Put them in `.env` next to `docker-compose.yml` (see `.env.example`). Only `LITE
 | `ALLOW_SIGNUP` | `true` | Set to `false` once your accounts exist |
 | `BLOCK_PRIVATE_NETWORK` | `true` | The HTTP node cannot call private/internal addresses (the configured Ollama address is still allowed) |
 | `OLLAMA_HOST` | `http://host.docker.internal:11434` | Where Ollama runs |
+| `ALERT_COOLDOWN_MIN` | `10` | At most one failure alert per workflow in this many minutes (`0` = no limit) |
 | `MAX_CONCURRENCY` | `10` | Workflows each worker container runs at once |
 | `SAVE_SUCCESS_DATA` | `true` | `false` keeps only a one-line record of successful runs (saves space) |
 | `PLUGINS_DIR` | `/plugins` (= `./plugins-user`) | Folder with your own plugins |

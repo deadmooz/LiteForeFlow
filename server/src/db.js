@@ -61,6 +61,14 @@ CREATE TABLE IF NOT EXISTS schedules (
 );
 CREATE INDEX IF NOT EXISTS idx_schedules_wf ON schedules(workflow_id);`,
   },
+  {
+    id: 4,
+    sql: `
+CREATE TABLE IF NOT EXISTS alert_state (
+  workflow_id TEXT PRIMARY KEY REFERENCES workflows(id) ON DELETE CASCADE,
+  last_sent TEXT NOT NULL, suppressed INTEGER NOT NULL DEFAULT 0, last_error TEXT
+);`,
+  },
 ];
 
 const splitStatements = (sql) => sql.split(/;\s*(?:\n|$)/).map((s) => s.trim()).filter(Boolean);

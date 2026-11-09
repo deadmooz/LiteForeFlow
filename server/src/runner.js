@@ -5,6 +5,7 @@ import { reserveRun, refundRun, getPlan } from './plans.js';
 import { enqueue } from './queue.js';
 import { config } from './config.js';
 import { pack } from './packing.js';
+import { notifyFailure } from './alerts.js';
 
 export const workerId = `${os.hostname()}:${process.pid}`;
 
@@ -110,6 +111,10 @@ export async function runExecution({ executionId, workflow, mode, triggerNodeId,
 
   if (result.status === 'error' && mode !== 'error' && mode !== 'subworkflow') {
     submitErrorWorkflow(workflow, executionId, result.error).catch((e) => console.error('[error-workflow]', e.message));
+  }
+  // Someone is watching an editor run, so only unattended runs (webhooks, schedules, polling) send an alert.
+  if (result.status === 'error' && mode !== 'error' && mode !== 'subworkflow' && mode !== 'manual') {
+    notifyFailure(workflow, result.error).catch((e) => console.error('[alerts]', e.message));
   }
   // A failed run answers with its error only. Its last output is the data that was fed into the failing step (often the whole
   // request body); callers never read it, and the queue would copy it into Redis for every failure.
