@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position,
+  ReactFlow, ReactFlowProvider, Background, BackgroundVariant, Controls, MiniMap, Handle, Position,
   useNodesState, useEdgesState, addEdge, useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -321,7 +321,8 @@ function EditorInner() {
             deleteKeyCode={['Backspace', 'Delete']}
             fitView proOptions={{ hideAttribution: true }}
           >
-            <Background gap={20} />
+            <Background id="grid-minor" variant={BackgroundVariant.Lines} gap={24} lineWidth={1} color="var(--grid-minor)" />
+            <Background id="grid-major" variant={BackgroundVariant.Lines} gap={120} lineWidth={1} color="var(--grid-major)" />
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable maskColor="rgba(120, 130, 160, 0.18)" nodeColor="#7b7bff" nodeStrokeWidth={0} />
           </ReactFlow>
