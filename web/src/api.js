@@ -12,15 +12,23 @@ let onUnauthorized = () => {};
 export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn; };
 
 export async function api(path, { method = 'GET', body } = {}) {
-  const res = await fetch(`/api${path}`, {
-    method,
-    headers: {
-      'content-type': 'application/json',
-      ...(auth.token ? { authorization: `Bearer ${auth.token}` } : {}),
-      ...(auth.workspace ? { 'x-workspace-id': auth.workspace } : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch(`/api${path}`, {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        ...(auth.token ? { authorization: `Bearer ${auth.token}` } : {}),
+        ...(auth.workspace ? { 'x-workspace-id': auth.workspace } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    // The browser only says "Failed to fetch" when the server cannot be reached at all. Say what that means and what to try.
+    const err = new Error('We cannot reach LiteForeFlow right now. Check that it is running (docker compose ps) and that this address is right, then try again.');
+    err.status = 0;
+    throw err;
+  }
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
