@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { curvePoints, handlePoint, edgeEnds, distanceToCurve, findInsertTarget, planInsert, downstream, rewire, copyPayload, parseClip, clonePaste, createHistory, GAP } from '../src/flow.js';
+import { nearestConnectTarget, curvePoints, handlePoint, edgeEnds, distanceToCurve, findInsertTarget, planInsert, downstream, rewire, copyPayload, parseClip, clonePaste, createHistory, GAP } from '../src/flow.js';
 
 const box = (x, y, extra = {}) => ({ x, y, w: 190, h: 56, ins: 1, outs: 1, ...extra });
 // A --- B on one row, C far below
@@ -133,4 +133,60 @@ test('the history is capped, so a long session cannot grow without limit', () =>
 
 test('edgeEnds is null when a step is unknown', () => {
   assert.equal(edgeEnds({ source: 'A', target: 'nope', sourceHandle: 'out-0', targetHandle: 'in-0' }, boxes), null);
+});
+
+const cb = { A: box(0, 0, { ins: 0 }), M: box(300, -100, { ins: 2 }), S: box(300, 200), Z: box(900, 0) };
+const ok = (id, side) => (side === 'in' ? cb[id].ins > 0 : cb[id].outs > 0);
+
+test('a line dragged out of an output suggests the nearest step that takes an input, and the handle closest to the pointer', () => {
+  const from = { nodeId: 'A', type: 'source', index: 0 };
+  const near = nearestConnectTarget({ point: { x: 290, y: -90 }, boxes: cb, edges: [], from, eligible: ok });
+  assert.equal(near.id, 'M');
+  assert.equal(near.handle, 'in-0', 'the upper of the two inputs is closer to a pointer above the middle');
+  const low = nearestConnectTarget({ point: { x: 290, y: -50 }, boxes: cb, edges: [], from, eligible: ok });
+  assert.equal(low.handle, 'in-1');
+});
+
+test('a step far away is not suggested, and neither is the step the line comes from', () => {
+  const from = { nodeId: 'A', type: 'source', index: 0 };
+  assert.equal(nearestConnectTarget({ point: { x: 600, y: 600 }, boxes: cb, edges: [], from, eligible: ok }), null);
+  assert.equal(nearestConnectTarget({ point: { x: 10, y: 10 }, boxes: { A: cb.A }, edges: [], from, eligible: ok }), null);
+});
+
+test('a trigger takes no input, so it is never offered for a line from an output', () => {
+  const boxesT = { A: box(0, 0), T: box(300, 0, { ins: 0 }) };
+  const from = { nodeId: 'A', type: 'source', index: 0 };
+  const eligible = (id, side) => (side === 'in' ? boxesT[id].ins > 0 : boxesT[id].outs > 0);
+  assert.equal(nearestConnectTarget({ point: { x: 310, y: 10 }, boxes: boxesT, edges: [], from, eligible }), null);
+});
+
+test('dragging backwards from an input looks for steps that have an output', () => {
+  const from = { nodeId: 'S', type: 'target', index: 0 };
+  const near = nearestConnectTarget({ point: { x: 150, y: 110 }, boxes: cb, edges: [], from, eligible: ok });
+  assert.equal(near.id, 'A'); assert.equal(near.side, 'out'); assert.equal(near.handle, 'out-0');
+});
+
+test('an input that is already joined is not offered again for the same line, and a free one is preferred', () => {
+  const from = { nodeId: 'A', type: 'source', index: 0 };
+  const joined = [{ source: 'A', sourceHandle: 'out-0', target: 'M', targetHandle: 'in-0' }];
+  const next = nearestConnectTarget({ point: { x: 290, y: -90 }, boxes: cb, edges: joined, from, eligible: ok });
+  assert.equal(next.id, 'M'); assert.equal(next.handle, 'in-1', 'the other input is offered');
+  const both = [...joined, { source: 'A', sourceHandle: 'out-0', target: 'M', targetHandle: 'in-1' }];
+  assert.equal(nearestConnectTarget({ point: { x: 290, y: -90 }, boxes: { A: cb.A, M: cb.M }, edges: both, from, eligible: ok }), null, 'both inputs already joined to A');
+});
+
+test('hysteresis: a chosen step stays chosen a little further out, a new one needs to be close', () => {
+  const from = { nodeId: 'A', type: 'source', index: 0 };
+  const p = { x: 300 - 135, y: -72 };
+  assert.equal(nearestConnectTarget({ point: p, boxes: cb, edges: [], from, eligible: ok }), null);
+  assert.equal(nearestConnectTarget({ point: p, boxes: cb, edges: [], from, eligible: ok, current: 'M' })?.id, 'M');
+});
+
+test('when the nearest step cannot take the line, the next nearest one that can is offered', () => {
+  const bx = { A: box(0, 0, { ins: 0 }), B: box(300, 0), C: box(300, 120) };
+  const from = { nodeId: 'A', type: 'source', index: 0 };
+  const eligible = (id, side) => (side === 'in' ? bx[id].ins > 0 : bx[id].outs > 0);
+  const joined = [{ source: 'A', sourceHandle: 'out-0', target: 'B', targetHandle: 'in-0' }];
+  const near = nearestConnectTarget({ point: { x: 250, y: 60 }, boxes: bx, edges: joined, from, eligible });
+  assert.equal(near?.id, 'C', 'B is closer but already joined to A, so C is offered');
 });

@@ -13,7 +13,12 @@
   const nodes = () => $$('.react-flow__node').length;
   const edges = () => $$('.react-flow__edge').length;
   const center = (el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
-  const fire = (type, x, y, target = window) => target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: type === 'mouseup' ? 0 : 1, view: window }));
+  // React Flow listens for pointer events on handles, nodes use mouse events: send both
+  const fire = (type, x, y, target = window) => {
+    const o = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: type === 'mouseup' ? 0 : 1, view: window };
+    target.dispatchEvent(new PointerEvent(type.replace('mouse', 'pointer'), { ...o, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+    target.dispatchEvent(new MouseEvent(type, o));
+  };
   const setVal = (el, v) => { Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, v); el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })); };
   const stepsAre = (n, e) => nodes() === n && (e === undefined || edges() === e);
   let out = [];
@@ -103,6 +108,35 @@
       add('EDIT-6', 'dragging a loose step over a line shows a preview, Esc cancels it, and dropping inserts it', /Drop to insert between/.test(chip) && lit === 1 && chipAfter === '' && stayed && preview && inserted, `chip=${!!chip} lit=${lit} afterEsc="${chipAfter}" stayedLoose=${stayed} preview2=${preview} inserted=${inserted}`);
       await undoTo(n0, e0);
     } else add('EDIT-6', 'needs a line', false, 'skipped');
+
+    // EDIT-8 drag a line out of a handle and stop near (not on) another step: it is suggested with a dotted line, Esc cancels, release connects
+    if (edges()) {
+      const src = $$('.react-flow__node').find((n) => n.querySelector('.react-flow__handle.source'));
+      const body = $$('.react-flow__node').find((n) => n.querySelector('.react-flow__handle.target') && n.querySelector('.react-flow__handle.source'));
+      await select(body); key('c', { ctrlKey: true }); paste(); await waitFor(() => stepsAre(n0 + 1)); await sleep(300);
+      const loose = $$('.react-flow__node').find((n) => n.classList.contains('selected'));
+      const lb = loose.getBoundingClientRect();
+      const handle = src.querySelector('.react-flow__handle.source'); const h = center(handle);
+      const stop = { x: lb.left + lb.width / 2, y: lb.bottom + 60 }; // below the copy, away from every handle, so only the suggestion can connect // past the 60 px handle magnet, well inside the 120 px step suggestion
+      const e1 = edges();
+      const hold = async () => {
+        fire('mousedown', h.x, h.y, handle);
+        for (let i = 1; i <= 16; i += 1) { fire('mousemove', h.x + ((stop.x - h.x) * i) / 16, h.y + ((stop.y - h.y) * i) / 16); await sleep(30); }
+        await waitFor(() => $('.connect-near'), 2500);
+      };
+      await hold();
+      const shown = !!$('.connect-near') && !!$('.connect-line') && !!$('.connect-x') && /Release to connect to/.test($('.insert-chip')?.textContent ?? '');
+      key('Escape'); await sleep(250);
+      const cleared = !$('.connect-near') && !$('.connect-x');
+      fire('mouseup', stop.x, stop.y); await sleep(500);
+      const nothing = edges() === e1;
+      await hold();
+      fire('mouseup', stop.x, stop.y);
+      const joined = await waitFor(() => edges() === e1 + 1 && /Connected .* to /.test(msg()));
+      const tidy = !$('.connect-line') && !$('.connect-near');
+      add('EDIT-8', 'a dragged line suggests the nearest step with a dotted line, Esc cancels it, and releasing connects', shown && cleared && nothing && joined && tidy, `suggested=${shown} escCleared=${cleared} escConnectedNothing=${nothing} joined=${joined} tidy=${tidy}`);
+      await undoTo(n0, e0);
+    } else add('EDIT-8', 'needs a line', false, 'skipped');
 
     // EDIT-7 the alert settings open and close
     $('.react-flow__pane')?.click(); await waitFor(() => $('.alert-settings'), 1500);

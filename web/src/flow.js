@@ -115,6 +115,47 @@ export function rewire(edges, edge, nodeId) {
   ];
 }
 
+/* ------------------------------ dragging a line out of a handle ------------------------------ */
+const boxDistance = (p, b) => Math.hypot(Math.max(b.x - p.x, 0, p.x - (b.x + b.w)), Math.max(b.y - p.y, 0, p.y - (b.y + b.h)));
+
+/**
+ * While a line is dragged out of a handle, which step would it join if released now, and at which of that step's handles?
+ * `from` is { nodeId, type: 'source' | 'target', index }. A line dragged from an output looks for steps that take an input,
+ * and the other way round. Only steps within `near` screen pixels count (a chosen one is kept out to `keep`), and the handle
+ * is the free one closest to the pointer (a handle already joined to the same step is never offered twice).
+ * `eligible(id, side)` says whether a step has that kind of handle at all (a trigger takes no input).
+ */
+export function nearestConnectTarget({ point, boxes, edges, from, eligible, zoom = 1, current = null, near = 120, keep = 150 }) {
+  const side = from.type === 'source' ? 'in' : 'out';
+  const pick = (id) => {
+    const b = boxes[id];
+    const count = side === 'in' ? b.ins : b.outs;
+    const taken = (i) => edges.some((e) => (side === 'in'
+      ? e.source === from.nodeId && e.target === id && e.sourceHandle === `out-${from.index}` && e.targetHandle === `in-${i}`
+      : e.source === id && e.target === from.nodeId && e.sourceHandle === `out-${i}` && e.targetHandle === `in-${from.index}`));
+    const used = (i) => edges.some((e) => (side === 'in' ? e.target === id && e.targetHandle === `in-${i}` : e.source === id && e.sourceHandle === `out-${i}`));
+    const options = Array.from({ length: count }, (_, i) => i).filter((i) => !taken(i));
+    if (!options.length) return null;
+    const free = options.filter((i) => !used(i));
+    const pool = free.length ? free : options;
+    const y = (i) => b.y + (b.h * (i + 1)) / (count + 1);
+    const index = pool.reduce((best, i) => (Math.abs(y(i) - point.y) < Math.abs(y(best) - point.y) ? i : best), pool[0]);
+    return { id, side, index, handle: `${side}-${index}` };
+  };
+  let best = null;
+  let stay = null;
+  for (const id of Object.keys(boxes)) {
+    if (id === from.nodeId || !eligible(id, side)) continue;
+    const d = boxDistance(point, boxes[id]) * zoom;
+    if (d > Math.max(near, keep)) continue;
+    const spot = pick(id);
+    if (!spot) continue; // this step cannot take the line (already joined the same way): look at the next one
+    if (id === current && d <= keep) stay = spot;
+    if (d <= near && (!best || d < best.d)) best = { spot, d };
+  }
+  return stay ?? best?.spot ?? null;
+}
+
 /* ------------------------------------ copy and paste ------------------------------------ */
 export const CLIP_MARK = 'liteforeflow-steps';
 

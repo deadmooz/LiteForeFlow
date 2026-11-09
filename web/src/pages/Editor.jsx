@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant, Controls, MiniMap, Handle, Position,
-  useNodesState, useEdgesState, addEdge, useReactFlow,
+  useNodesState, useEdgesState, addEdge, useReactFlow, getSmoothStepPath,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { api } from '../api.js';
@@ -10,7 +10,7 @@ import ParamForm, { effectiveParams } from '../components/ParamForm.jsx';
 import { NodeResult, StatusBadge } from '../components/common.jsx';
 import AlertSettings from '../components/AlertSettings.jsx';
 import InsertPicker from '../components/InsertPicker.jsx';
-import { createHistory, copyPayload, parseClip, clonePaste, findInsertTarget, planInsert, rewire, edgeMidpoint } from '../flow.js';
+import { createHistory, copyPayload, parseClip, clonePaste, findInsertTarget, planInsert, rewire, edgeMidpoint, nearestConnectTarget, handlePoint } from '../flow.js';
 
 const GROUPS = [['trigger', 'Triggers'], ['core', 'Core'], ['logic', 'Logic'], ['data', 'Data'], ['ai', 'AI'], ['app', 'Apps']];
 const rid = () => Math.random().toString(36).slice(2, 10);
@@ -36,7 +36,7 @@ const FlowNode = React.memo(function FlowNode({ data, selected }) {
   return (
     <div className={`ff-node ${selected ? 'selected' : ''} ${status ?? ''} ${node.disabled ? 'disabled' : ''}`} style={{ minHeight: h }}>
       {Array.from({ length: inputs }, (_, i) => (
-        <Handle key={`in-${i}`} id={`in-${i}`} type="target" position={Position.Left} style={{ top: `${((i + 1) * 100) / (inputs + 1)}%` }} />
+        <Handle key={`in-${i}`} id={`in-${i}`} type="target" position={Position.Left} className={data.near === `in-${i}` ? 'near' : undefined} style={{ top: `${((i + 1) * 100) / (inputs + 1)}%` }} />
       ))}
       <div className="ff-node-icon">{def.icon}</div>
       <div className="ff-node-text">
@@ -44,7 +44,7 @@ const FlowNode = React.memo(function FlowNode({ data, selected }) {
         <div className="ff-node-type">{def.name}</div>
       </div>
       {Array.from({ length: outs }, (_, i) => (
-        <Handle key={`out-${i}`} id={`out-${i}`} type="source" position={Position.Right} style={{ top: `${((i + 1) * 100) / (outs + 1)}%` }}>
+        <Handle key={`out-${i}`} id={`out-${i}`} type="source" position={Position.Right} className={data.near === `out-${i}` ? 'near' : undefined} style={{ top: `${((i + 1) * 100) / (outs + 1)}%` }}>
           {outputLabel(node, def, i) !== null && <span className="handle-label">{outputLabel(node, def, i)}</span>}
         </Handle>
       ))}
@@ -52,6 +52,34 @@ const FlowNode = React.memo(function FlowNode({ data, selected }) {
   );
 });
 const nodeTypes = { ff: FlowNode };
+
+/*
+ * The line shown while one is dragged out of a handle: dotted, with a stepped route and a blue dot at each end.
+ * When a step is close enough to take it, the line snaps to that step's handle instead of following the pointer,
+ * and an x in the middle says "Esc cancels". `suggestion` is written by the editor and read here on every draw.
+ */
+const suggestion = { current: null };
+function ConnectionLine({ fromX, fromY, toX, toY, fromPosition, toPosition }) {
+  const t = suggestion.current;
+  const ex = t ? t.point.x : toX; const ey = t ? t.point.y : toY;
+  const [path, mx, my] = getSmoothStepPath({
+    sourceX: fromX, sourceY: fromY, sourcePosition: fromPosition, targetX: ex, targetY: ey,
+    targetPosition: t ? (t.side === 'in' ? Position.Left : Position.Right) : toPosition, borderRadius: 8,
+  });
+  return (
+    <g className="connect-preview">
+      <path d={path} fill="none" className="connect-line" />
+      <circle cx={fromX} cy={fromY} r={6} className="connect-dot" />
+      <circle cx={ex} cy={ey} r={6} className={t ? 'connect-dot' : 'connect-dot loose'} />
+      {t && (
+        <g transform={`translate(${mx},${my})`} className="connect-x">
+          <circle r={9} />
+          <text textAnchor="middle" dominantBaseline="central">×</text>
+        </g>
+      )}
+    </g>
+  );
+}
 
 // initialWidth/Height let the lines of a brand-new step draw at once instead of waiting for the first measurement.
 const toRF = (node, def, status) => ({ id: node.id, type: 'ff', position: node.position ?? { x: 0, y: 0 }, initialWidth: 190, initialHeight: 56, data: { node, def, status } });
@@ -98,6 +126,8 @@ function EditorInner() {
   const nodesRef = useRef([]); const edgesRef = useRef([]);
   const dragRef = useRef(null); const paletteType = useRef(null); const candidateRef = useRef(null);
   const clipRef = useRef(null); const pasteCount = useRef(0); const plusTimer = useRef(0); const overPlus = useRef(false);
+  const connectRef = useRef(null); const nearRef = useRef(null);
+  const [near, setNear] = useState(null); // { id, handle, side }: the step a dragged line would join if released now
 
   const typeMap = useMemo(() => Object.fromEntries(types.map((t) => [t.type, t])), [types]);
   nodesRef.current = nodes; edgesRef.current = edges;
@@ -248,7 +278,11 @@ function EditorInner() {
     setMessage({ kind: 'ok', text: `Inserted between ${nameOf(edge.source)} and ${nameOf(edge.target)}`, undo: true });
     markDirty();
   };
-  const cancelInsert = () => { if (dragRef.current) dragRef.current.cancelled = true; setTarget(null); };
+  const cancelInsert = () => {
+    if (dragRef.current) dragRef.current.cancelled = true;
+    if (connectRef.current) connectRef.current.cancelled = true;
+    setTarget(null); setNearTarget(null);
+  };
 
   /* ---- copy, cut, paste, duplicate, select all ---- */
   const chosenSteps = () => {
@@ -362,6 +396,52 @@ function EditorInner() {
     const target = candidateRef.current; setTarget(null);
     if (d && target && d.free && d.eligible && !d.cancelled && !e.altKey) insertOnEdge(target, node.id);
   };
+
+  /* ---- dragging a line out of a handle: the nearest step that can take it lights up, and releasing there connects ---- */
+  const setNearTarget = (t) => {
+    const k = t ? `${t.id}:${t.handle}` : null;
+    if ((nearRef.current?.k ?? null) === k) return;
+    const n = t && nodesRef.current.find((x) => x.id === t.id);
+    const box = n && boxesOf([n])[t.id];
+    nearRef.current = t ? { ...t, k, point: box ? handlePoint(box, t.side, t.index) : null } : null;
+    suggestion.current = nearRef.current?.point ? nearRef.current : null;
+    setNear(nearRef.current);
+  };
+  const canTake = (id, side) => {
+    const n = nodesRef.current.find((x) => x.id === id);
+    return !!n && (side === 'in' ? (n.data.def.inputs ?? 1) > 0 : outputCount(n.data.node, n.data.def) > 0);
+  };
+  const connectMove = (e) => {
+    const c = connectRef.current;
+    if (!c || c.cancelled || c.frame) return;
+    const pt = e.touches?.[0] ?? e;
+    c.frame = requestAnimationFrame(() => {
+      c.frame = 0;
+      if (connectRef.current !== c || c.cancelled) return;
+      setNearTarget(nearestConnectTarget({
+        point: rf.screenToFlowPosition({ x: pt.clientX, y: pt.clientY }), boxes: boxesOf(nodesRef.current), edges: edgesRef.current,
+        from: c, eligible: canTake, zoom: rf.getZoom(), current: nearRef.current?.id ?? null,
+      }));
+    });
+  };
+  const onConnectStart = (_, { nodeId, handleId, handleType }) => {
+    connectRef.current = { nodeId, type: handleType, index: Number(String(handleId ?? '').split('-')[1] ?? 0) || 0, cancelled: false, frame: 0 };
+    window.addEventListener('mousemove', connectMove); window.addEventListener('touchmove', connectMove, { passive: true });
+    setPlus(null);
+  };
+  const onConnectEnd = (_, state) => {
+    const c = connectRef.current; connectRef.current = null;
+    window.removeEventListener('mousemove', connectMove); window.removeEventListener('touchmove', connectMove);
+    if (c?.frame) cancelAnimationFrame(c.frame);
+    const t = nearRef.current; setNearTarget(null);
+    if (!c || c.cancelled || !t || state?.isValid) return; // a line that landed on a handle was already connected by the canvas
+    const out = c.type === 'source' ? { id: c.nodeId, handle: `out-${c.index}` } : { id: t.id, handle: t.handle };
+    const into = c.type === 'source' ? { id: t.id, handle: t.handle } : { id: c.nodeId, handle: `in-${c.index}` };
+    setEdges((es) => addEdge({ id: `${out.id}-${out.handle}-${into.id}-${into.handle}`, source: out.id, sourceHandle: out.handle, target: into.id, targetHandle: into.handle }, es));
+    const nameOf = (id) => nodesRef.current.find((n) => n.id === id)?.data.node.name ?? 'step';
+    setMessage({ kind: 'ok', text: `Connected ${nameOf(out.id)} to ${nameOf(into.id)}`, undo: true });
+    markDirty();
+  };
   /** Clicking a palette item places the node to the right of the selection (or the last node) without overlapping. */
   const addAtCenter = (def) => {
     const anchor = nodes.find((n) => n.id === selectedId) ?? nodes[nodes.length - 1];
@@ -397,7 +477,10 @@ function EditorInner() {
   };
 
   const onConnect = useCallback((params) => {
+    if (connectRef.current?.cancelled) return; // Esc was pressed while dragging the line
     setEdges((eds) => addEdge({ ...params, id: `${params.source}-${params.sourceHandle}-${params.target}-${params.targetHandle}` }, eds));
+    const nm = (id) => nodesRef.current.find((n) => n.id === id)?.data.node.name ?? 'step';
+    setMessage({ kind: 'ok', text: `Connected ${nm(params.source)} to ${nm(params.target)}`, undo: true });
     setDirty(true);
   }, [setEdges]);
 
@@ -454,11 +537,19 @@ function EditorInner() {
     ? nodes.filter((n) => n.data.node.type === 'trigger.webhook').map((n) => ({ name: n.data.node.name, url: `${window.location.origin}/webhook/${effectiveParams(n.data.def, n.data.node.parameters).path}`, method: effectiveParams(n.data.def, n.data.node.parameters).method }))
     : [];
 
+  const displayNodes = useMemo(() => (near ? nodes.map((n) => (n.id === near.id ? { ...n, className: `${n.className ?? ''} connect-near`.trim(), data: { ...n.data, near: near.handle } } : n)) : nodes), [nodes, near]);
   const displayEdges = useMemo(() => (candidate ? edges.map((e) => (e.id === candidate ? { ...e, className: 'insert-target' } : e)) : edges), [edges, candidate]);
   const hint = candidate ? (() => {
     const edge = edges.find((e) => e.id === candidate); const at = edge && lineAnchor(candidate);
     const nm = (id) => nodes.find((n) => n.id === id)?.data.node.name ?? 'step';
     return edge && at ? { ...at, text: `Drop to insert between ${nm(edge.source)} and ${nm(edge.target)}` } : null;
+  })() : null;
+  const nearHint = near ? (() => {
+    const n = nodes.find((x) => x.id === near.id);
+    if (!n || !wrapper.current) return null;
+    const sp = rf.flowToScreenPosition({ x: n.position.x + (n.measured?.width ?? 190) / 2, y: n.position.y });
+    const r = wrapper.current.getBoundingClientRect();
+    return { x: Math.round(sp.x - r.left), y: Math.round(sp.y - r.top), text: `Release to connect to ${n.data.node.name}` };
   })() : null;
   const picked = nodes.filter((n) => n.selected).length;
   const insertable = types.filter(canInsert);
@@ -524,7 +615,9 @@ function EditorInner() {
 
         <div className="canvas" ref={wrapper} onDrop={onDrop} onDragOver={onDragOver} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setTarget(null); }}>
           <ReactFlow
-            nodes={nodes} edges={displayEdges} nodeTypes={nodeTypes}
+            nodes={displayNodes} edges={displayEdges} nodeTypes={nodeTypes}
+            onConnectStart={onConnectStart} onConnectEnd={onConnectEnd} connectionRadius={60}
+            connectionLineComponent={ConnectionLine}
             onNodeDragStart={onNodeDragStart} onNodeDrag={onNodeDrag} onNodeDragStop={onNodeDragStop}
             onEdgeMouseEnter={(_, edge) => showPlus(edge.id)} onEdgeMouseLeave={hidePlusSoon} onMoveStart={() => setPlus(null)}
             onNodesChange={(c) => { onNodesChange(c); if (c.some((x) => x.type === 'position' && x.dragging === false)) markDirty(); if (c.some((x) => x.type === 'remove')) markDirty(); }}
@@ -540,6 +633,7 @@ function EditorInner() {
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable maskColor="rgba(120, 130, 160, 0.18)" nodeColor="#7b7bff" nodeStrokeWidth={0} />
           </ReactFlow>
+          {nearHint && <div className="insert-chip" style={{ left: nearHint.x, top: nearHint.y }} role="status">{nearHint.text} <kbd>Esc</kbd> to cancel</div>}
           {hint && <div className="insert-chip" style={{ left: hint.x, top: hint.y }} role="status">{hint.text} <kbd>Esc</kbd> to cancel</div>}
           {plus && !picker && (
             <button className="insert-plus" style={{ left: plus.x, top: plus.y }} aria-label="Add a step here" title="Add a step here"
