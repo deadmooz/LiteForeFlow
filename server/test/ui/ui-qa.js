@@ -109,6 +109,17 @@
     const opened = !!$('.modal');
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); await sleep(200);
     add('UI-9', 'keyboard: "/" focuses search, Enter opens a run, Esc closes it', focused && opened && !$('.modal'), `focus=${focused} opened=${opened}`);
+    // UI-11 the Workflows page greets the signed-in person by first name and shows times the way people say them
+    await goto('Workflows'); await waitFor(() => $('.hello h1') && document.querySelector('td[data-label="Updated"]'));
+    const hello = $('.hello h1')?.textContent ?? ''; const when = document.querySelector('td[data-label="Updated"]');
+    add('UI-11', 'greeting names the person; times read "just now / minutes ago" with the exact time on hover', /^(Good morning|Good afternoon|Good evening|Working late), \S+/.test(hello) && /ago|just now|yesterday|[A-Z][a-z]{2} \d/.test(when?.textContent ?? '') && !!when?.title, `${hello} | ${when?.textContent} | title=${when?.title?.slice(0, 20)}`);
+
+    // UI-12 the theme switch applies at once, is remembered, and Auto returns to the system setting
+    const seg = [...document.querySelectorAll('.theme-seg button')]; const btn = (t) => seg.find((b) => b.textContent.trim() === t);
+    click(btn('Light')); await sleep(150); const light = document.documentElement.dataset.theme === 'light' && localStorage.getItem('ff_theme') === 'light' && btn('Light').getAttribute('aria-pressed') === 'true';
+    click(btn('Dark')); await sleep(150); const dark = document.documentElement.dataset.theme === 'dark';
+    click(btn('Auto')); await sleep(150); const auto = !document.documentElement.dataset.theme && !localStorage.getItem('ff_theme');
+    add('UI-12', 'theme switch: Light and Dark apply and persist, Auto clears both', light && dark && auto, `light=${light} dark=${dark} auto=${auto}`);
     return out;
   }
   window.__qa = { run };
