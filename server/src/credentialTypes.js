@@ -50,10 +50,6 @@ export const credentialTypes = [
       { name: 'secure', label: 'Use TLS (port 465)', type: 'boolean', required: false },
     ],
   },
-  {
-    id: 'googleServiceAccount', name: 'Google Service Account',
-    fields: [{ name: 'json', label: 'Service account JSON key', type: 'text', required: true }],
-  },
 ];
 
 export const getCredentialType = (id) => credentialTypes.find((t) => t.id === id);
@@ -139,12 +135,6 @@ export function validateCredentialData(typeId, data) {
   if (!type) return `Unknown credential type "${typeId}"`;
   for (const f of type.fields) {
     if (f.required && (data[f.name] === undefined || data[f.name] === '')) return `Missing field: ${f.label}`;
-  }
-  if (typeId === 'googleServiceAccount') {
-    try {
-      const k = JSON.parse(data.json);
-      if (!k.client_email || !k.private_key) return 'Service account JSON must contain client_email and private_key';
-    } catch { return 'Service account JSON is not valid JSON'; }
   }
   return null;
 }

@@ -40,14 +40,6 @@ export const templates = [
     ]),
   },
   {
-    id: 'form-to-sheets', name: 'Form submission → Google Sheet', category: 'Data capture',
-    description: 'Append every webhook form submission as a row in Google Sheets.',
-    definition: flow([
-      webhook('contact-form', { samplePayload: '{ "body": { "name": "Ada", "email": "ada@example.com" } }' }),
-      n('g', 'app.googleSheets', 'Add row', { operation: 'appendRow', range: 'Sheet1', values: '["{{ $json.body.name }}", "{{ $json.body.email }}", "{{ $now }}"]' }),
-    ]),
-  },
-  {
     id: 'lead-airtable-telegram', name: 'New lead → Airtable + Telegram', category: 'Sales',
     description: 'Save a lead in Airtable and ping your team on Telegram in parallel.',
     definition: flow(
@@ -153,17 +145,6 @@ export const templates = [
       ],
       [link('t', 'w'), link('w', 's', 0), link('w', 'd', 1), link('w', 'g', 2)],
     ),
-  },
-  {
-    id: 'api-to-sheets', name: 'API list → Google Sheet rows', category: 'Data capture',
-    description: 'Fetch a JSON list from an API, split it into items and write each as a sheet row.',
-    definition: flow([
-      cronAt('0 6 * * *'),
-      n('h', 'http.request', 'Fetch', { url: 'https://jsonplaceholder.typicode.com/users' }),
-      n('x', 'data.splitOut', 'Split Out', { field: 'data' }),
-      n('f', 'data.set', 'Pick fields', { fields: [{ name: 'name', value: '{{ $json.name }}' }, { name: 'email', value: '{{ $json.email }}' }], keepOthers: false }),
-      n('g', 'app.googleSheets', 'Add row', { operation: 'appendRow', range: 'Sheet1', values: '["{{ $json.name }}", "{{ $json.email }}"]' }),
-    ]),
   },
 ];
 

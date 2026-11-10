@@ -92,8 +92,8 @@ Tests for the Postgres/Redis mode need running Postgres and Redis servers and `T
 
 ## Known limits
 
-- Vendor integrations (Slack, Notion, Airtable, Stripe, HubSpot, Telegram, Discord, Google Sheets) call the vendors' documented APIs
+- Vendor integrations (Slack, Notion, Airtable, Stripe, HubSpot, Telegram, Discord) call the vendors' documented APIs
   but were not run against live accounts; email, HTTP, AI, Postgres and webhooks were.
-- No OAuth sign-in flow yet (so no Gmail/Calendar nodes; use SMTP for email and a service account for Sheets).
+- No OAuth sign-in flow yet (so no Gmail/Calendar nodes; use SMTP for email).
 - No loops in the workflow graph (nodes already process every item; use *Split Out* for lists), no file/binary data, no version history.
 - Postgres is the only database; the API and every worker share it.
