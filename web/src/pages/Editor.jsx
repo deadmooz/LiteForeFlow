@@ -10,7 +10,7 @@ import ParamForm, { effectiveParams } from '../components/ParamForm.jsx';
 import { NodeResult, StatusBadge } from '../components/common.jsx';
 import AlertSettings from '../components/AlertSettings.jsx';
 import InsertPicker from '../components/InsertPicker.jsx';
-import { createHistory, copyPayload, parseClip, clonePaste, findInsertTarget, planInsert, rewire, edgeMidpoint, nearestConnectTarget, handlePoint } from '../flow.js';
+import { createHistory, copyPayload, parseClip, clonePaste, findInsertTarget, planInsert, rewire, edgeMidpoint, nearestConnectTarget, handlePoint, handleIndex } from '../flow.js';
 
 const GROUPS = [['trigger', 'Triggers'], ['core', 'Core'], ['logic', 'Logic'], ['data', 'Data'], ['ai', 'AI'], ['app', 'Apps']];
 const rid = () => Math.random().toString(36).slice(2, 10);
@@ -156,7 +156,7 @@ function EditorInner() {
     nodes: nodes.map((n) => ({ ...n.data.node, position: n.position })),
     connections: edges.map((e) => ({
       from: e.source, to: e.target,
-      fromOutput: Number(e.sourceHandle?.split('-')[1] ?? 0), toInput: Number(e.targetHandle?.split('-')[1] ?? 0),
+      fromOutput: handleIndex(e.sourceHandle), toInput: handleIndex(e.targetHandle),
     })),
   }), [nodes, edges]);
 
@@ -194,9 +194,9 @@ function EditorInner() {
   const serializeRef = useRef(serialize); serializeRef.current = serialize;
   useEffect(() => {
     if (!loaded) return undefined;
-    const snap = JSON.stringify(serialize());
-    if (!history.ready) { history.reset(snap); bump((n) => n + 1); return undefined; }
-    const t = setTimeout(() => { if (history.commit(snap)) bump((n) => n + 1); }, 350);
+    if (!history.ready) { history.reset(JSON.stringify(serialize())); bump((n) => n + 1); return undefined; }
+    // serialise only once things have been still: a drag changes `nodes` on every frame
+    const t = setTimeout(() => { if (history.commit(JSON.stringify(serialize()))) bump((n) => n + 1); }, 350);
     return () => clearTimeout(t);
   }, [loaded, nodes, edges, serialize, history]);
 
@@ -411,7 +411,9 @@ function EditorInner() {
     const n = nodesRef.current.find((x) => x.id === id);
     return !!n && (side === 'in' ? (n.data.def.inputs ?? 1) > 0 : outputCount(n.data.node, n.data.def) > 0);
   };
-  const connectMove = (e) => {
+  // One listener for the whole app life: a re-render in the middle of a drag must not leave the added and the removed function different.
+  const connectMoveRef = useRef(null);
+  connectMoveRef.current = (e) => {
     const c = connectRef.current;
     if (!c || c.cancelled || c.frame) return;
     const pt = e.touches?.[0] ?? e;
@@ -419,13 +421,15 @@ function EditorInner() {
       c.frame = 0;
       if (connectRef.current !== c || c.cancelled) return;
       setNearTarget(nearestConnectTarget({
-        point: rf.screenToFlowPosition({ x: pt.clientX, y: pt.clientY }), boxes: boxesOf(nodesRef.current), edges: edgesRef.current,
+        point: rf.screenToFlowPosition({ x: pt.clientX, y: pt.clientY }), boxes: c.boxes, edges: edgesRef.current,
         from: c, eligible: canTake, zoom: rf.getZoom(), current: nearRef.current?.id ?? null,
       }));
     });
   };
+  const connectMove = useCallback((e) => connectMoveRef.current(e), []);
   const onConnectStart = (_, { nodeId, handleId, handleType }) => {
-    connectRef.current = { nodeId, type: handleType, index: Number(String(handleId ?? '').split('-')[1] ?? 0) || 0, cancelled: false, frame: 0 };
+    // steps do not move while a line is dragged, so their boxes are measured once
+    connectRef.current = { nodeId, type: handleType, index: handleIndex(handleId), cancelled: false, frame: 0, boxes: boxesOf(nodesRef.current) };
     window.addEventListener('mousemove', connectMove); window.addEventListener('touchmove', connectMove, { passive: true });
     setPlus(null);
   };
@@ -552,7 +556,7 @@ function EditorInner() {
     return { x: Math.round(sp.x - r.left), y: Math.round(sp.y - r.top), text: `Release to connect to ${n.data.node.name}` };
   })() : null;
   const picked = nodes.filter((n) => n.selected).length;
-  const insertable = types.filter(canInsert);
+  const insertable = useMemo(() => types.filter(canInsert), [types]);
 
   if (!meta) return <div className="center muted">{message ? <span className="error">{message.text}</span> : 'Loading…'}</div>;
 

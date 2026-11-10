@@ -23,7 +23,7 @@ export function curvePoints(s, t, steps = 24) {
   return pts;
 }
 
-const handleIndex = (id) => Number(String(id ?? '').split('-')[1] ?? 0) || 0;
+export const handleIndex = (id) => Number(String(id ?? '').split('-')[1] ?? 0) || 0;
 export const handlePoint = (box, side, index) => {
   const count = Math.max(1, side === 'out' ? box.outs : box.ins);
   return { x: side === 'out' ? box.x + box.w : box.x, y: box.y + (box.h * (index + 1)) / (count + 1) };
@@ -147,7 +147,7 @@ export function nearestConnectTarget({ point, boxes, edges, from, eligible, zoom
   for (const id of Object.keys(boxes)) {
     if (id === from.nodeId || !eligible(id, side)) continue;
     const d = boxDistance(point, boxes[id]) * zoom;
-    if (d > Math.max(near, keep)) continue;
+    if (d > keep) continue; // keep is always the wider of the two
     const spot = pick(id);
     if (!spot) continue; // this step cannot take the line (already joined the same way): look at the next one
     if (id === current && d <= keep) stay = spot;

@@ -8,7 +8,7 @@ import { loadCredential } from './credentials.js';
  * The secrets stay where they already live (encrypted credentials); a workflow only remembers which one to use and where to send.
  * At most one alert per workflow per cooldown window, with a count of what was held back, so a broken schedule cannot flood anyone.
  */
-export const ALERT_CHANNELS = { email: 'smtp', slack: 'slackApi', telegram: 'telegramApi' };
+const ALERT_CHANNELS = { email: 'smtp', slack: 'slackApi', telegram: 'telegramApi' };
 const CHANNEL_NAMES = { email: 'email', slack: 'Slack', telegram: 'Telegram' };
 const bad = (message) => Object.assign(new Error(message), { status: 400 });
 
@@ -101,7 +101,7 @@ export async function testAlert(workspaceId, workflow, alerts) {
     const a = sanitizeAlerts({ ...alerts, enabled: true });
     const cred = await loadCredential(workspaceId, a.credentialId, ALERT_CHANNELS[a.channel]);
     await sendMessage(a.channel, cred, a.to, compose(workflow, null, { test: true }));
-    return { ok: true, message: `Sent. Check ${a.channel === 'email' ? a.to : a.channel === 'slack' ? a.to : 'your Telegram chat'}.` };
+    return { ok: true, message: `Sent. Check ${a.channel === 'telegram' ? 'your Telegram chat' : a.to}.` };
   } catch (e) { return { ok: false, message: clip(e.message, 300) }; }
 }
 
