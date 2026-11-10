@@ -5,6 +5,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { useTestDatabase } from './test-db.mjs';
 
 /* ------------------------------------------------------------------------------------------------------------
  * Plugins, the REST connector, Respond to Webhook, the data tools, and the friendly (live) fields.
@@ -63,7 +64,7 @@ process.env.PLUGINS_DIR = EXTRA;
 process.env.LITEFOREFLOW_SECRET = 'test-secret';
 process.env.LITEFOREFLOW_NOTION_URL = mockBase;
 process.env.AUTH_RATE_LIMIT_PER_MIN = '1000';
-process.env.DB_PATH = ':memory:';
+useTestDatabase('ff_plug');
 
 // user plugins: one good, one that crashes, one that clashes with a built-in block, one without a manifest
 const plug = (id, manifest, code) => {

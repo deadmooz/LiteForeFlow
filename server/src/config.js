@@ -39,8 +39,7 @@ export const config = {
   telegramApiUrl: (env.TELEGRAM_API_URL || 'https://api.telegram.org').replace(/\/$/, ''),
   // Always next to the app (not the current folder), so starting it from anywhere finds the same data.
   dataDir: env.DATA_DIR || fileURLToPath(new URL('../../data', import.meta.url)),
-  dbPath: env.DB_PATH || null,
-  // Set DATABASE_URL for Postgres (required for multi-process); otherwise SQLite in DATA_DIR.
+  // Postgres connection (set by docker-compose).
   databaseUrl: env.DATABASE_URL || '',
   pgSchema: env.PG_SCHEMA || '',
   pgConnectTimeoutMs: Number(env.PG_CONNECT_TIMEOUT_MS) || 5000,

@@ -5,6 +5,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { useTestDatabase, dropTestSchema } from './test-db.mjs';
 
 const RUN_ID = crypto.randomBytes(4).toString('hex');
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'liteforeflow-'));
@@ -12,15 +13,8 @@ process.env.LITEFOREFLOW_SECRET = 'test-secret';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
 process.env.OLLAMA_HOST = '127.0.0.1:1'; // nothing listens here, so "Ollama is not running" is testable even on a PC that has it
 process.env.AUTH_RATE_LIMIT_PER_MIN = '1000'; // this suite creates many accounts from one IP
-// The same suite runs against the default stack (SQLite + in-process queue) or the production stack
-// (Postgres + Redis/BullMQ) when TEST_DATABASE_URL / TEST_REDIS_URL are set.
-const PG_SCHEMA = `ff_test_${RUN_ID}`;
-if (process.env.TEST_DATABASE_URL) {
-  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
-  process.env.PG_SCHEMA = PG_SCHEMA;
-} else {
-  process.env.DB_PATH = ':memory:';
-}
+// Postgres always (the product has no other database); Redis/BullMQ too when TEST_REDIS_URL is set.
+const PG_SCHEMA = useTestDatabase('ff_test');
 if (process.env.TEST_REDIS_URL) {
   process.env.REDIS_URL = process.env.TEST_REDIS_URL;
   process.env.QUEUE_NAME = `ff-test-${RUN_ID}`;
@@ -82,13 +76,7 @@ after(async () => {
   mock.close();
   await closeQueue();
   await closeDb();
-  if (process.env.TEST_DATABASE_URL) {
-    const { default: pg } = await import('pg');
-    const c = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
-    await c.connect();
-    await c.query(`DROP SCHEMA IF EXISTS ${PG_SCHEMA} CASCADE`);
-    await c.end();
-  }
+  await dropTestSchema(PG_SCHEMA);
 });
 
 async function api(method, url, { token, body, headers } = {}) {

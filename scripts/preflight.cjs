@@ -18,13 +18,6 @@ if (tooOld) {
   process.exit(1);
 }
 
-try {
-  require('node:sqlite'); // the built-in database; no separate install needed
-} catch (e) {
-  console.error('\n  This Node.js build has no built-in database support. Please install the current LTS from https://nodejs.org\n');
-  process.exit(1);
-}
-
 // Are all the packages from package.json really installed? `--deps` is used by the launchers: exit code 3 = please run
 // `npm install`. Without the flag (npm start) the same problem is explained and stops the start.
 const fs = require('node:fs');

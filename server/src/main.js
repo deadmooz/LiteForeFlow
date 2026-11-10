@@ -1,6 +1,4 @@
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
 import { config } from './config.js';
 import { queueMode, startWorker, startEvents, closeQueue } from './queue.js';
 import './jobs.js';
@@ -13,7 +11,7 @@ import { loadPlugins, watchPlugins } from './plugins.js';
 const role = config.role;
 if (!['all', 'api', 'worker'].includes(role)) throw new Error(`LITEFOREFLOW_ROLE must be all, api or worker (got "${role}")`);
 if (role !== 'all' && (queueMode !== 'bullmq' || dialect !== 'postgres')) {
-  throw new Error(`LITEFOREFLOW_ROLE=${role} needs both DATABASE_URL (Postgres) and REDIS_URL — SQLite and the in-process queue cannot be shared between processes`);
+  throw new Error(`LITEFOREFLOW_ROLE=${role} needs both DATABASE_URL (Postgres) and REDIS_URL — the in-process queue cannot be shared between processes`);
 }
 
 /** Listens on the wanted port; when the user did not pick one explicitly and it is taken or blocked, quietly tries the next ones. */
@@ -41,37 +39,6 @@ function listen(app) {
   });
 }
 
-const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
-
-/**
- * One server per data folder. Two servers on the same SQLite file would both run every schedule.
- * The lock file holds { pid, url }; it counts only if that process is alive AND answers on that address.
- */
-async function acquireLock() {
-  const file = path.join(config.dataDir, '.lock');
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      fs.writeFileSync(file, JSON.stringify({ pid: process.pid }), { flag: 'wx' });
-      const release = () => { try { if (JSON.parse(fs.readFileSync(file, 'utf8')).pid === process.pid) fs.unlinkSync(file); } catch { /* gone */ } };
-      process.on('exit', release);
-      return { update: (url) => fs.writeFileSync(file, JSON.stringify({ pid: process.pid, url })), release };
-    } catch (e) {
-      if (e.code !== 'EEXIST') return { update: () => {}, release: () => {} }; // a read-only folder is reported elsewhere
-    }
-    let held = null;
-    try { held = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* unreadable = stale */ }
-    if (held?.pid && held.pid !== process.pid && pidAlive(held.pid)) {
-      let running = !held.url; // started a moment ago and has no address yet
-      if (held.url) {
-        try { running = (await fetch(`${held.url}/api/health`, { signal: AbortSignal.timeout(1500) })).ok; } catch { running = false; }
-      }
-      if (running) throw new Error(`LiteForeFlow is already running with this data${held.url ? ` - open ${held.url}` : ''}. Close the other window first, or use a different DATA_DIR.`);
-    }
-    try { fs.unlinkSync(file); } catch { /* raced with another start */ }
-  }
-  throw new Error('Could not take the data-folder lock (data/.lock). Delete that file if no LiteForeFlow is running.');
-}
-
 function openBrowser(url) {
   const [cmd, args] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]]
     : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
@@ -80,18 +47,15 @@ function openBrowser(url) {
 
 const stops = [];
 let server = null;
-let lock = null;
 
 try {
   await loadPlugins(); // before anything can run or validate a workflow that uses a plugin's nodes
   if (queueMode === 'bullmq') stops.push(watchPlugins()); // several processes share the plugin folder: stay in step with each other
   if (role !== 'worker') {
-    if (queueMode === 'memory' && dialect === 'sqlite') lock = await acquireLock();
     if (queueMode === 'memory') await failInflightExecutions(); // anything in flight died with the previous process
     stops.push(await initScheduler());
     if (queueMode === 'bullmq') await startEvents(); // lets this process mark executions of crashed workers as failed
     server = await listen(createApp());
-    lock?.update(config.publicUrl);
     if (role === 'all' && queueMode === 'memory') {
       const firstRun = (await get('SELECT COUNT(*) AS n FROM users')).n === 0;
       console.log('');
@@ -125,7 +89,6 @@ async function shutdown(signal) {
   if (server) await new Promise((r) => server.close(r));
   await closeQueue(); // waits for in-flight jobs to finish
   await closeDb();
-  lock?.release();
   process.exit(0);
 }
 process.on('SIGINT', () => shutdown('SIGINT'));

@@ -5,6 +5,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { useTestDatabase, dropTestSchema } from './test-db.mjs';
 
 // Fake Slack and Telegram, plus a tiny mail server, so every delivery path is exercised for real.
 const slackSeen = []; const telegramSeen = []; const mails = [];
@@ -56,9 +57,9 @@ const apiBase = `http://127.0.0.1:${fakeApi.address().port}`;
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'liteforeflow-alerts-'));
 process.env.LITEFOREFLOW_SECRET = 'alerts-test-secret';
-// The same suite runs on the default stack (SQLite, in-process queue) or the production one when TEST_DATABASE_URL / TEST_REDIS_URL are set.
+// Postgres always; Redis/BullMQ too when TEST_REDIS_URL is set.
 const RUN_ID = Math.random().toString(36).slice(2, 8);
-if (process.env.TEST_DATABASE_URL) { process.env.DATABASE_URL = process.env.TEST_DATABASE_URL; process.env.PG_SCHEMA = `ff_alerts_${RUN_ID}`; } else { process.env.DB_PATH = ':memory:'; }
+const PG_SCHEMA = useTestDatabase('ff_alerts');
 if (process.env.TEST_REDIS_URL) { process.env.REDIS_URL = process.env.TEST_REDIS_URL; process.env.QUEUE_NAME = `ff-alerts-${RUN_ID}`; }
 process.env.AUTH_RATE_LIMIT_PER_MIN = '1000';
 process.env.SLACK_API_URL = `${apiBase}/slack`;
@@ -86,7 +87,7 @@ before(async () => {
   token = (await call('POST', '/api/auth/signup', { email: 'alerts@example.com', password: 'alerts-password' })).data.token;
   await run("UPDATE workspaces SET plan = 'team'"); // the free plan allows five active workflows and these tests create more
 });
-after(async () => { server?.close(); fakeApi.close(); smtp.close(); await closeQueue(); await closeDb(); });
+after(async () => { server?.close(); fakeApi.close(); smtp.close(); await closeQueue(); await closeDb(); await dropTestSchema(PG_SCHEMA); });
 
 const credential = async (type, data) => (await call('POST', '/api/credentials', { name: `${type} ${++n}`, type, data })).data.id;
 const slackCred = () => credential('slackApi', { token: 'xoxb-test' });

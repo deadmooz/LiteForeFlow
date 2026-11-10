@@ -4,11 +4,12 @@ import fs from 'node:fs';
 import http from 'node:http';
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { useTestDatabase } from './test-db.mjs';
 
 /* Guards for the speed and memory work: the fast paths must give exactly the answers real JavaScript gives, a damaged
  * sandbox must never be reused, shared data must be fresh for every item, and the compressed static files must be safe. */
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'liteforeflow-perf-'));
-process.env.DB_PATH = ':memory:';
+useTestDatabase('ff_perf');
 process.env.LITEFOREFLOW_SECRET = 'perf';
 process.env.AUTH_RATE_LIMIT_PER_MIN = '100000';
 

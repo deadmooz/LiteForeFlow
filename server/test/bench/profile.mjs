@@ -3,11 +3,12 @@
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
+import { useTestDatabase } from '../test-db.mjs';
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'prof-'));
 process.env.LITEFOREFLOW_SECRET = 'prof';
 process.env.AUTH_RATE_LIMIT_PER_MIN = '100000';
-process.env.DB_PATH = ':memory:';
+useTestDatabase('ff_prof');
 const { createApp } = await import('../../src/app.js');
 const { startWorker, closeQueue } = await import('../../src/queue.js');
 const { loadPlugins } = await import('../../src/plugins.js');

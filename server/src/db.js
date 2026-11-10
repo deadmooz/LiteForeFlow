@@ -1,15 +1,12 @@
 import crypto from 'node:crypto';
-import path from 'node:path';
 import { config } from './config.js';
 
 /*
- * One tiny async interface over two drivers:
- *   - SQLite (node:sqlite) for zero-setup local use / single process
- *   - Postgres (pg) when DATABASE_URL is set — required to run more than one process
- * SQL is written once with `?` placeholders and the portable subset both engines understand.
+ * One tiny async interface over Postgres (pg). The Docker edition has no other database.
+ * SQL is written once with `?` placeholders; they are turned into $1, $2 ... before a query is sent.
  */
 
-export const dialect = config.databaseUrl ? 'postgres' : 'sqlite';
+export const dialect = 'postgres';
 
 const MIGRATIONS = [
   {
@@ -73,50 +70,12 @@ CREATE TABLE IF NOT EXISTS alert_state (
 
 const splitStatements = (sql) => sql.split(/;\s*(?:\n|$)/).map((s) => s.trim()).filter(Boolean);
 
-/* ------------------------------------ SQLite ---------------------------------- */
-async function createSqlite() {
-  const { DatabaseSync } = await import('node:sqlite');
-  const db = new DatabaseSync(config.dbPath || path.join(config.dataDir, 'liteforeflow.db'));
-  // WAL + synchronous=NORMAL: far fewer fsyncs; a power loss can drop the last commits but never corrupts the file.
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA journal_size_limit = 8388608; PRAGMA cache_size = -4096;');
-  const bind = (p) => p.map((v) => (v === undefined ? null : v));
-  // Preparing a statement costs more than running it, and the app asks the same few questions over and over: keep them.
-  const prepared = new Map();
-  const prep = (sql) => {
-    let st = prepared.get(sql);
-    if (!st) {
-      if (prepared.size >= 300) prepared.clear(); // statements with one-off text (very long IN lists ...) must not pile up
-      st = db.prepare(sql);
-      prepared.set(sql, st);
-    }
-    return st;
-  };
-  const q = {
-    all: async (sql, ...p) => prep(sql).all(...bind(p)),
-    get: async (sql, ...p) => prep(sql).get(...bind(p)),
-    run: async (sql, ...p) => ({ changes: Number(prep(sql).run(...bind(p)).changes) }),
-  };
-  let chain = Promise.resolve(); // one transaction at a time on the single connection
-  return {
-    ...q,
-    exec: async (sql) => { for (const st of splitStatements(sql)) db.exec(st); },
-    transaction: (fn) => {
-      const result = chain.then(async () => {
-        db.exec('BEGIN IMMEDIATE');
-        try { const out = await fn(q); db.exec('COMMIT'); return out; } catch (e) { db.exec('ROLLBACK'); throw e; }
-      });
-      chain = result.catch(() => {});
-      return result;
-    },
-    close: async () => { prepared.clear(); db.close(); },
-  };
-}
-
 /* ----------------------------------- Postgres --------------------------------- */
 async function createPostgres() {
+  if (!config.databaseUrl) throw new Error('DATABASE_URL is not set. The Docker edition needs Postgres: start it with  docker compose up -d --build');
   let pg;
   try { pg = (await import('pg')).default; } catch { throw new Error('Postgres support is not installed. Run:  npm run scale-up'); }
-  pg.types.setTypeParser(20, (v) => parseInt(v, 10)); // COUNT(*) etc. come back as numbers, like SQLite
+  pg.types.setTypeParser(20, (v) => parseInt(v, 10)); // COUNT(*) etc. come back as numbers,
   const toPg = (sql) => { let i = 0; return sql.replace(/\?/g, () => { i += 1; return `$${i}`; }); };
   // Postgres cannot store a NUL character in text and answers with an internal error; tell the caller what is wrong instead.
   const bind = (p) => p.map((v) => {
@@ -176,7 +135,7 @@ async function createPostgres() {
   };
 }
 
-const driver = dialect === 'postgres' ? await createPostgres() : await createSqlite();
+const driver = await createPostgres();
 
 async function migrate() {
   await driver.exec('CREATE TABLE IF NOT EXISTS migrations (id INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
@@ -189,9 +148,8 @@ async function migrate() {
   }
 }
 
-/** Serialises boot-time migrations across processes (Postgres advisory lock; SQLite is single-process). */
+/** Serialises boot-time migrations across processes (Postgres advisory lock). */
 async function withMigrationLock(fn) {
-  if (dialect !== 'postgres') return fn();
   const client = await driver.pool.connect();
   try {
     await client.query('SELECT pg_advisory_lock(727274)');
