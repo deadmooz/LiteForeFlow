@@ -53,7 +53,7 @@ export async function boot(name, env = {}, { dataDir } = {}) {
   const dir = dataDir ?? fs.mkdtempSync(path.join(os.tmpdir(), `qa-${name}-`));
   const flags = ['--max-semi-space-size=2', '--max-old-space-size=192'];
   const proc = spawn(process.execPath, [...flags, srcIndex], {
-    env: { ...process.env, PORT: String(port), DATA_DIR: dir, LITEFOREFLOW_SECRET: 'qa-secret', AUTH_RATE_LIMIT_PER_MIN: '100000', ...env },
+    env: { ...process.env, LITEFOREFLOW_ALLOW_HOST: '1', PORT: String(port), DATA_DIR: dir, LITEFOREFLOW_SECRET: 'qa-secret', AUTH_RATE_LIMIT_PER_MIN: '100000', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let log = '';

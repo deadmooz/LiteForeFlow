@@ -2,6 +2,20 @@
 // an unusable data folder, a corrupted database, a bad setting) is shown as one plain sentence instead of a stack trace.
 // Set LITEFOREFLOW_DEBUG=1 to see the full details.
 
+// The Docker edition is meant to run inside its container only (that is where Postgres, Redis and the strong sandbox are
+// guaranteed). Running it straight on a computer is refused with a pointer to the right command.
+// Developers and the test tools can opt out with LITEFOREFLOW_ALLOW_HOST=1 (`node --test` children are let through).
+{
+  const { existsSync } = await import('node:fs');
+  const inContainer = process.env.LITEFOREFLOW_IN_DOCKER === 'true' || existsSync('/.dockerenv');
+  if (!inContainer && process.env.LITEFOREFLOW_ALLOW_HOST !== '1' && !process.env.NODE_TEST_CONTEXT) {
+    console.error(['', '  This is the Docker edition of LiteForeFlow. It only runs inside Docker.', '',
+      '  Start it with:   docker compose up -d --build', '  Then open:       http://localhost:3000', '',
+      '  (Want to run it without Docker? Use the Lite edition instead.)', ''].join(String.fromCharCode(10)));
+    process.exit(1);
+  }
+}
+
 // A rejected promise nobody waits for (for example from user code) must never take the whole server down.
 process.on('unhandledRejection', (reason) => {
   console.warn(`[liteforeflow] Ignored an unhandled promise rejection: ${reason?.message ?? reason}`);

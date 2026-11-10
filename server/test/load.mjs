@@ -58,7 +58,7 @@ if (!external) {
   const t0 = Date.now();
   child = spawn(process.execPath, [...(args.nodeargs ?? '--max-semi-space-size=2 --max-old-space-size=192').split(' ').filter((x) => x && x !== 'none'), path.join(dir, 'server/src/index.js')], {
     cwd: dir, stdio: 'ignore',
-    env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, LITEFOREFLOW_SECRET: 'load-test-secret-0123456789', NODE_ENV: 'production', AUTH_RATE_LIMIT_PER_MIN: '1000' },
+    env: { ...process.env, LITEFOREFLOW_ALLOW_HOST: '1', PORT: String(PORT), DATA_DIR: dataDir, LITEFOREFLOW_SECRET: 'load-test-secret-0123456789', NODE_ENV: 'production', AUTH_RATE_LIMIT_PER_MIN: '1000' },
   });
   for (let i = 0; i < 200; i += 1) { try { if ((await request('GET', '/api/health')).status === 200) break; } catch { /* starting */ } await sleep(100); }
   startupMs = Date.now() - t0;

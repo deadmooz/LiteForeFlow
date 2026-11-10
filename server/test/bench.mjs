@@ -28,7 +28,7 @@ async function rssMb(pid) {
 
 const t0 = Date.now();
 const child = spawn(process.execPath, [...((process.env.BENCH_NODE_ARGS ?? '--max-semi-space-size=2 --max-old-space-size=192').split(' ').filter(Boolean)), path.join(here, '../src/index.js')], {
-  env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, LITEFOREFLOW_SECRET: 'bench', NODE_ENV: 'production' }, stdio: 'ignore',
+  env: { ...process.env, LITEFOREFLOW_ALLOW_HOST: '1', PORT: String(PORT), DATA_DIR: dataDir, LITEFOREFLOW_SECRET: 'bench', NODE_ENV: 'production' }, stdio: 'ignore',
 });
 for (let i = 0; i < 100; i += 1) { try { if ((await fetch(`${base}/api/health`)).ok) break; } catch { /* starting */ } await sleep(100); }
 const startupMs = Date.now() - t0;

@@ -40,7 +40,7 @@ Stop with `docker compose down` (your data stays); `docker compose logs -f` show
 
 | | Lite edition | Docker edition |
 |---|---|---|
-| Start | double-click / `npm start` | `docker compose up` |
+| Start | double-click / `npm start` | `docker compose up -d --build` (the only way: it refuses to run outside Docker) |
 | Database | one SQLite file | **Postgres** |
 | Running workflows | inside the one process | **Redis queue + any number of worker containers** |
 | If something crashes | restart it | queued runs wait; a crashed worker's run is marked failed (never repeated) |

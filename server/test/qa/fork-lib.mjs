@@ -53,7 +53,7 @@ export function killTree(proc) {
 
 /** Starts the app (any launcher). Resolves once it prints its banner or exits. */
 export function launch(kind, dir, { env = {}, cwd, args = [] } = {}) {
-  const e = { ...process.env, LITEFOREFLOW_OPEN: '0', ...env };
+  const e = { ...process.env, LITEFOREFLOW_OPEN: '0', LITEFOREFLOW_ALLOW_HOST: '1', ...env };
   let proc;
   const run = (cmd, a, o = {}) => spawn(cmd, a, { cwd: cwd ?? dir, env: e, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, ...o });
   switch (kind) {

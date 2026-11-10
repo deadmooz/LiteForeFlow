@@ -1,11 +1,12 @@
 # LiteForeFlow - advanced guide
 
-Everything here is optional. The default `npm start` / `start.bat` setup is a single process with a built-in database
-(SQLite) and an in-process queue, and needs nothing else.
+Everything here is optional. In this Docker edition the app only runs inside its containers (`docker compose up -d --build`);
+starting `node` / `npm start` directly on your computer is refused. Developers can opt out with `LITEFOREFLOW_ALLOW_HOST=1`.
+Set the variables below in `.env` (Compose passes them on) and run `docker compose up -d`.
 
 ## Settings (environment variables)
 
-Set them before starting - Windows PowerShell: `$env:PORT = "4000"`; Mac/Linux: `PORT=4000 ./start.sh`.
+Put them in the `.env` file next to `docker-compose.yml`, for example `PORT=4000`.
 
 | Variable | Default | What it does |
 |---|---|---|
