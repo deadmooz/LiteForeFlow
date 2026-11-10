@@ -1,7 +1,7 @@
 // Load test:  node server/test/load.mjs [--mode workflow|ingest] [--total N] [--conc N] [--dir <code folder>] [--label text]
 //   workflow  every request runs a real workflow (webhook -> Code -> Set) and waits for the answer
 //   ingest    every request is a ~1 KB JSON event accepted by a webhook that answers "immediately" (the run is queued)
-// Starts the server from --dir exactly as `npm start` would (SQLite, in-process queue) on a fresh data folder,
+// Starts the server from --dir exactly as `npm start` would (Postgres from the test container, in-process queue) on a fresh data folder,
 // or tests a running stack with --url (then memory numbers are not available).
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -52,13 +52,21 @@ function request(method, p, body, token) {
   });
 }
 
-let child = null; let dataDir = null; let startupMs = 0;
+import { useTestDatabase, dropTestSchema, TEST_DATABASE_URL } from './test-db.mjs';
+async function withSchema(fn) {
+  const { default: pg } = await import('pg');
+  const c = new pg.Client({ connectionString: TEST_DATABASE_URL, options: `-c search_path=${schema}` });
+  await c.connect();
+  try { return await fn(c); } finally { await c.end(); }
+}
+let child = null; let dataDir = null; let startupMs = 0; let schema = null;
 if (!external) {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ff-load-'));
+  schema = useTestDatabase('ff_load');
   const t0 = Date.now();
   child = spawn(process.execPath, [...(args.nodeargs ?? '--max-semi-space-size=2 --max-old-space-size=192').split(' ').filter((x) => x && x !== 'none'), path.join(dir, 'server/src/index.js')], {
     cwd: dir, stdio: 'ignore',
-    env: { ...process.env, LITEFOREFLOW_ALLOW_HOST: '1', PORT: String(PORT), DATA_DIR: dataDir, LITEFOREFLOW_SECRET: 'load-test-secret-0123456789', NODE_ENV: 'production', AUTH_RATE_LIMIT_PER_MIN: '1000' },
+    env: { ...process.env, LITEFOREFLOW_ALLOW_HOST: '1', DATABASE_URL: process.env.DATABASE_URL, PG_SCHEMA: schema, PORT: String(PORT), DATA_DIR: dataDir, LITEFOREFLOW_SECRET: 'load-test-secret-0123456789', NODE_ENV: 'production', AUTH_RATE_LIMIT_PER_MIN: '1000' },
   });
   for (let i = 0; i < 200; i += 1) { try { if ((await request('GET', '/api/health')).status === 200) break; } catch { /* starting */ } await sleep(100); }
   startupMs = Date.now() - t0;
@@ -72,10 +80,7 @@ const token = signup.token;
 const hook = (nodes, connections) => ({ nodes, connections });
 const trigger = (respond) => ({ id: 't', type: 'trigger.webhook', name: 'Hook', parameters: { path: 'load', method: 'POST', respond }, position: { x: 0, y: 0 } });
 if (!external) { // the free plan allows 1,000 runs a month; the benchmark workspace needs the biggest plan
-  const { DatabaseSync } = await import('node:sqlite');
-  const db = new DatabaseSync(path.join(dataDir, 'liteforeflow.db'));
-  db.exec("PRAGMA busy_timeout = 5000; UPDATE workspaces SET plan = 'team'");
-  db.close();
+  await withSchema((c) => c.query("UPDATE workspaces SET plan = 'team'"));
   await sleep(100);
 }
 const definition = MODE === 'workflow'
@@ -123,16 +128,13 @@ const pct = (p) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length *
 let recorded = 'n/a';
 if (dataDir && MODE !== 'api') {
   await sleep(3000); // let the in-process queue finish what it accepted
-  const { DatabaseSync } = await import('node:sqlite');
-  const db = new DatabaseSync(path.join(dataDir, 'liteforeflow.db'));
-  const rows = db.prepare('SELECT status, COUNT(*) AS n FROM executions GROUP BY status').all();
-  db.close();
+  const rows = (await withSchema((c) => c.query('SELECT status, COUNT(*) AS n FROM executions GROUP BY status'))).rows;
   recorded = Object.fromEntries(rows.map((r) => [r.status, Number(r.n)]));
   recorded.accepted = TOTAL - failed;
 }
-const dbBytes = dataDir ? fs.readdirSync(dataDir).filter((f) => f.startsWith('liteforeflow.db')).reduce((n, f) => n + fs.statSync(path.join(dataDir, f)).size, 0) : NaN;
+const dbBytes = NaN; // the database lives in Postgres, not in a file
 
-if (child) { child.kill(); await sleep(500); try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch { /* still closing */ } }
+if (child) { child.kill(); await sleep(500); await dropTestSchema(schema).catch(() => {}); try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch { /* still closing */ } }
 agent.destroy();
 const f = (n, d = 0) => (Number.isFinite(n) ? n.toFixed(d) : 'n/a');
 console.log(JSON.stringify({

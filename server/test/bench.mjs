@@ -1,5 +1,5 @@
 // Footprint benchmark:  node server/test/bench.mjs
-// Starts the server exactly as `npm start` would (SQLite + in-process queue), then reports resident memory
+// Starts the server exactly as `npm start` would (Postgres from the test container + in-process queue), then reports resident memory
 // idle / under load, startup time and throughput. Works on Windows and Linux/macOS.
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -8,6 +8,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { useTestDatabase, dropTestSchema } from './test-db.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 3099;
@@ -26,9 +27,10 @@ async function rssMb(pid) {
   } catch { return NaN; }
 }
 
+const schema = useTestDatabase('ff_bench');
 const t0 = Date.now();
 const child = spawn(process.execPath, [...((process.env.BENCH_NODE_ARGS ?? '--max-semi-space-size=2 --max-old-space-size=192').split(' ').filter(Boolean)), path.join(here, '../src/index.js')], {
-  env: { ...process.env, LITEFOREFLOW_ALLOW_HOST: '1', PORT: String(PORT), DATA_DIR: dataDir, LITEFOREFLOW_SECRET: 'bench', NODE_ENV: 'production' }, stdio: 'ignore',
+  env: { ...process.env, LITEFOREFLOW_ALLOW_HOST: '1', DATABASE_URL: process.env.DATABASE_URL, PG_SCHEMA: schema, PORT: String(PORT), DATA_DIR: dataDir, LITEFOREFLOW_SECRET: 'bench', NODE_ENV: 'production' }, stdio: 'ignore',
 });
 for (let i = 0; i < 100; i += 1) { try { if ((await fetch(`${base}/api/health`)).ok) break; } catch { /* starting */ } await sleep(100); }
 const startupMs = Date.now() - t0;

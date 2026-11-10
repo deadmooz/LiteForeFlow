@@ -1,14 +1,12 @@
 // Seeds an empty server with an account and a large execution history so the editor's lists can be tested at scale.
-//   node server/test/ui/seed.mjs <baseUrl> [--rows 100000] [--sqlite <path to liteforeflow.db>]
-// Rows are written straight into the database (SQLite here; on Postgres use the SQL printed with --sql).
+//   node server/test/ui/seed.mjs <baseUrl> [--rows 100000]
+// Rows are written straight into Postgres inside the given container (--pg-container <name>).
 // Prints { token, workspace, email, password } as JSON for the browser scripts.
-import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 
 const base = process.argv[2] ?? 'http://127.0.0.1:3300';
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] : d; };
 const ROWS = Number(arg('rows', 100000));
-const dbPath = arg('sqlite');
 const pgContainer = arg('pg-container'); // Docker: rows are generated inside Postgres with generate_series
 const email = arg('email', 'ui@example.com');
 const password = 'ui-test-password';
@@ -31,23 +29,6 @@ for (const name of names) {
   ids.push([r.data.id, name]);
 }
 
-if (dbPath) {
-  const db = new DatabaseSync(dbPath);
-  db.exec('PRAGMA busy_timeout = 10000');
-  const ins = db.prepare('INSERT INTO executions (id, workspace_id, workflow_id, workflow_name, status, mode, started_at, finished_at, data, error) VALUES (?,?,?,?,?,?,?,?,?,?)');
-  const modes = ['webhook', 'manual', 'schedule'];
-  const t0 = Date.now();
-  db.exec('BEGIN');
-  for (let i = 0; i < ROWS; i += 1) {
-    const [wid, wname] = ids[i % ids.length];
-    const started = new Date(t0 - i * 1500);
-    const failed = i % 11 === 0;
-    ins.run(randomUUID(), ws, wid, wname, failed ? 'error' : 'success', modes[i % 3], started.toISOString(), new Date(+started + 120 + (i % 900)).toISOString(), null,
-      failed ? JSON.stringify({ message: `Request to https://api.example.com/v1/items/${i} failed with 502`, nodeName: 'HTTP Request' }) : null);
-  }
-  db.exec('COMMIT');
-  db.close();
-}
 if (pgContainer) {
   const { execFileSync } = await import('node:child_process');
   const values = ids.map(([id, name], i) => `(${i}, '${id}', '${name}')`).join(',');
@@ -60,4 +41,4 @@ if (pgContainer) {
     FROM generate_series(0, ${ROWS - 1}) g JOIN (VALUES ${values}) AS w(i, id, name) ON w.i = g % ${ids.length}`;
   execFileSync('docker', ['exec', '-i', pgContainer, 'psql', '-U', 'liteforeflow'], { input: sql, stdio: ['pipe', 'ignore', 'inherit'] });
 }
-console.log(JSON.stringify({ token, workspace: ws, email, password, workflows: ids.length, rows: dbPath || pgContainer ? ROWS : 0 }));
+console.log(JSON.stringify({ token, workspace: ws, email, password, workflows: ids.length, rows: pgContainer ? ROWS : 0 }));
