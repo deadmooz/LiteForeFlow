@@ -123,7 +123,8 @@ async function createBullDriver() {
         if (Date.now() - depthAt > 250) { depth = await queue.getWaitingCount(); depthAt = Date.now(); }
         if (depth >= config.maxQueueDepth) throw unavailable('The execution queue is full, please retry shortly');
         const events = wait ? await getEvents() : null; // subscribe before adding so the completion event cannot be missed
-        const added = await queue.add(payload.kind, payload, jobId ? { jobId } : undefined);
+        // Nobody asks for the answer of a job that was not waited for: let Redis forget it at once (saves memory and a round trip).
+        const added = await queue.add(payload.kind, payload, { ...(jobId ? { jobId } : {}), ...(wait ? {} : { removeOnComplete: true }) });
         depth += 1; // between two checks a burst still counts
         return { ev: events, job: added };
       });
@@ -151,7 +152,7 @@ async function createBullDriver() {
       // A finished job no longer needs its payload (the trigger items can be megabytes; the run's data is in the database).
       // Dropping it keeps Redis small no matter how many finished jobs are retained.
       const slim = (job) => job?.updateData({ kind: job.data?.kind, executionId: job.data?.executionId }).catch(() => {});
-      worker.on('completed', slim);
+      worker.on('completed', (job) => { if (job?.opts?.removeOnComplete !== true) slim(job); });
       worker.on('failed', slim);
       await worker.waitUntilReady();
     },

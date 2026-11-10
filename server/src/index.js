@@ -29,10 +29,6 @@ function explain(e) {
   if (e?.code === 'EACCES' || e?.code === 'EPERM' || e?.code === 'ENOENT' || e?.code === 'ENOTDIR') {
     return `Cannot use the data folder (${e.path ?? 'unknown'}): ${e.code}. Choose a folder you can write to, for example set DATA_DIR in the .env file.`;
   }
-  if (/malformed|not a database|file is encrypted|disk image/i.test(e?.message ?? '')) {
-    return 'The database file is damaged or is not a LiteForeFlow database. Your file was NOT changed. '
-      + 'Restore a backup of data/liteforeflow.db, or move it away to start fresh.';
-  }
   return e?.message ?? String(e);
 }
 

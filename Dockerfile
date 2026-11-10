@@ -19,20 +19,22 @@ COPY package.json package-lock.json .npmrc ./
 # prebuilt binaries of other platforms (about 20 MB). If isolated-vm was compiled here, its build/ folder is untouched.
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev  && rm -f node_modules/isolated-vm/*.tgz  && case "$(uname -m)" in x86_64) A=x64;; aarch64) A=arm64;; *) A=none;; esac  && if [ "$A" != none ]; then find node_modules/isolated-vm/prebuilds -mindepth 1 -maxdepth 1 ! -name "linux-$A" -exec rm -rf {} +; fi
 
-# --- 3) the small final image ----------------------------------------------------------------------------------
-FROM node:24-bookworm-slim
+RUN mkdir /data-skel
+
+# --- 3) the small final image: Node and nothing else (no shell, no package manager) -------------------------------
+FROM gcr.io/distroless/nodejs24-debian12
 # Small young generation + capped heap keep memory low. The strong code sandbox is mandatory in the Docker edition.
-ENV NODE_ENV=production DATA_DIR=/data LITEFOREFLOW_IN_DOCKER=true \
-    NODE_OPTIONS="--max-semi-space-size=2 --max-old-space-size=192"
+ENV NODE_ENV=production DATA_DIR=/data LITEFOREFLOW_IN_DOCKER=true     NODE_OPTIONS="--max-semi-space-size=2 --max-old-space-size=192"
 WORKDIR /app
 COPY --from=deps /app/node_modules node_modules
 COPY package.json ./
 COPY server server
 COPY plugins plugins
 COPY --from=web /build/web/dist web/dist
-RUN mkdir /data && chown node:node /data
-USER node
+# /data belongs to uid 1000, as it always did (volumes created by earlier versions of the image stay writable)
+COPY --from=deps --chown=1000:1000 /data-skel /data
+USER 1000:1000
 VOLUME /data
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD node -e "fetch('http://localhost:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "server/src/index.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD ["/nodejs/bin/node", "-e", "fetch('http://localhost:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+CMD ["server/src/index.js"]

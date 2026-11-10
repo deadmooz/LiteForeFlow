@@ -3,8 +3,29 @@ import crypto from 'node:crypto';
 import { get } from '../db.js';
 import { getNodeType, withDefaults } from '../nodes/index.js';
 import { parseWorkflow, submitExecution } from '../runner.js';
+import { onWorkflowChange, isLive } from '../changes.js';
 
 export const webhookRouter = express.Router();
+
+// path + method -> { wf, node, params }. Kept only while the change feed is live; emptied the moment any workflow or webhook changes.
+const hooks = new Map();
+onWorkflowChange(() => hooks.clear());
+async function findHook(path, method) {
+  const key = `${method} ${path}`;
+  const hit = isLive() ? hooks.get(key) : null;
+  if (hit && hit.exp > Date.now()) return hit;
+  // The exact method wins over ANY. The workflow comes in the same query.
+  const row = await get(
+    `SELECT w.*, h.node_id FROM webhooks h JOIN workflows w ON w.id = h.workflow_id
+     WHERE h.path = ? AND h.method IN (?, 'ANY') ORDER BY CASE WHEN h.method = 'ANY' THEN 1 ELSE 0 END LIMIT 1`, path, method,
+  );
+  const wf = row && parseWorkflow(row);
+  if (!wf?.active) return null;
+  const node = wf.definition.nodes.find((n) => n.id === row.node_id);
+  const entry = { wf, node, params: withDefaults(getNodeType('trigger.webhook'), node?.parameters), exp: Date.now() + 60_000 };
+  if (isLive()) { if (hooks.size >= 500) hooks.clear(); hooks.set(key, entry); }
+  return entry;
+}
 
 const SENSITIVE_HEADERS = new Set(['authorization', 'cookie', 'x-webhook-secret']);
 const safeEqual = (a, b) => {
@@ -33,16 +54,9 @@ function sendCustomResponse(res, r) {
 
 webhookRouter.all('/*', async (req, res) => {
   const path = req.params[0].replace(/^\/+|\/+$/g, '');
-  // The exact method wins over ANY. The workflow comes in the same query.
-  const row = await get(
-    `SELECT w.*, h.node_id FROM webhooks h JOIN workflows w ON w.id = h.workflow_id
-     WHERE h.path = ? AND h.method IN (?, 'ANY') ORDER BY CASE WHEN h.method = 'ANY' THEN 1 ELSE 0 END LIMIT 1`, path, req.method,
-  );
-  const wf = row && parseWorkflow(row);
-  if (!wf?.active) return res.status(404).json({ error: 'Webhook not found or workflow is not active' });
-
-  const node = wf.definition.nodes.find((n) => n.id === row.node_id);
-  const params = withDefaults(getNodeType('trigger.webhook'), node?.parameters);
+  const hook = await findHook(path, req.method);
+  if (!hook) return res.status(404).json({ error: 'Webhook not found or workflow is not active' });
+  const { wf, node, params } = hook;
   if (params.secret && !safeEqual(req.get('x-webhook-secret') ?? '', params.secret)) {
     return res.status(401).json({ error: 'Invalid webhook secret' });
   }

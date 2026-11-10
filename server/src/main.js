@@ -6,6 +6,7 @@ import { createApp } from './app.js';
 import { initScheduler } from './scheduler.js';
 import { failInflightExecutions } from './runner.js';
 import { loadPlugins, watchPlugins } from './plugins.js';
+import { startChangeFeed } from './changes.js';
 
 const role = config.role;
 if (!['all', 'api', 'worker'].includes(role)) throw new Error(`LITEFOREFLOW_ROLE must be all, api or worker (got "${role}")`);
@@ -42,6 +43,7 @@ const stops = [];
 let server = null;
 
 try {
+  stops.push(await startChangeFeed()); // keeps the small workflow caches correct across processes
   await loadPlugins(); // before anything can run or validate a workflow that uses a plugin's nodes
   if (queueMode === 'bullmq') stops.push(watchPlugins()); // several processes share the plugin folder: stay in step with each other
   if (role !== 'worker') {

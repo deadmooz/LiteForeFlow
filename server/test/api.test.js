@@ -21,6 +21,8 @@ if (process.env.TEST_REDIS_URL) {
 }
 
 const { createApp } = await import('../src/app.js');
+const { startChangeFeed } = await import('../src/changes.js');
+let stopFeed = null;
 const { startWorker, startEvents, closeQueue, queueMode } = await import('../src/queue.js');
 const { closeDb } = await import('../src/db.js');
 const { verifyStripeSignature } = await import('../src/routes/resources.js');
@@ -34,6 +36,7 @@ const seen = [];
 
 before(async () => {
   console.log(`# stack under test: db=postgres queue=${queueMode}`);
+  stopFeed = await startChangeFeed(); // the same cache invalidation the real server uses
   await startWorker();
   if (queueMode === 'bullmq') await startEvents();
   server = createApp().listen(0);
@@ -72,6 +75,7 @@ before(async () => {
 });
 
 after(async () => {
+  stopFeed?.();
   server.close();
   mock.close();
   await closeQueue();
@@ -505,7 +509,7 @@ test('footprint: logs are compressed, success data can be dropped, static data i
 
   const mk = (name, path, settings) => createWf(token, name, [
     node('t', 'trigger.webhook', 'Hook', { path, method: 'POST', respond: 'lastNode' }),
-    node('g', 'data.code', 'Gen', { mode: 'runOnce', code: 'return Array.from({ length: 150 }, (_, i) => ({ i, text: "row " + i }));' }),
+    node('g', 'data.code', 'Gen', { mode: 'runOnce', code: 'return Array.from({ length: 150 }, (_, i) => ({ i, text: "row " + i + " " + "padding ".repeat(20) }));' }),
   ], [edge('t', 'g')], settings);
 
   const keep = await mk('keeps', `fp-keep-${counter}`);

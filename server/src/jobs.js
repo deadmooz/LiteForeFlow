@@ -1,6 +1,6 @@
 import { setJobHandler, setFailedHandler } from './queue.js';
 import { get } from './db.js';
-import { loadWorkflow, runExecution, failExecution, testNodeJob } from './runner.js';
+import { loadWorkflowCached, runExecution, failExecution, testNodeJob } from './runner.js';
 import { handleCron, handleRssPoll } from './polling.js';
 
 /*
@@ -10,7 +10,7 @@ import { handleCron, handleRssPoll } from './polling.js';
 async function processJob(payload) {
   switch (payload.kind) {
     case 'execute': {
-      const base = await loadWorkflow(payload.workflowId, payload.workspaceId);
+      const base = await loadWorkflowCached(payload.workflowId, payload.workspaceId);
       if (!base) {
         await failExecution(payload.executionId, 'Workflow no longer exists');
         return { executionId: payload.executionId, status: 'error', error: { message: 'Workflow no longer exists' }, lastOutput: [] };

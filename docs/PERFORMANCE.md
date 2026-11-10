@@ -57,3 +57,13 @@ node server/test/bench/sandbox-safety.mjs              # infinite loops, memory 
 ```
 
 `npm test` includes `server/test/perf.test.mjs`, which keeps the fast paths honest: the same answers as real JavaScript, fresh shared data for every item, a damaged isolate never reused, and the compressed files only ever served from inside the web folder.
+
+## Docker edition: what keeps it fast under load
+
+Measured with `node server/test/bench/stack.mjs --quick` against `docker compose up` (16 parallel webhook calls, small JSON):
+
+- **Writes are batched.** Runs arriving at the same moment are counted and recorded in ONE statement, and finished runs are written the same way (`server/src/batch.js`). A quiet server adds no waiting; the batch size grows with the load.
+- **A run is marked "running" only if it lasts more than 300 ms.** Most runs finish in milliseconds, so the extra write is skipped.
+- **Webhook and workflow lookups are cached** and emptied the moment anything changes (Postgres LISTEN/NOTIFY triggers, `server/src/changes.js`), so an edit or (de)activation is seen by the API and every worker at once.
+- **Redis forgets fire-and-forget jobs** as soon as they finish; Postgres settings favour many small commits; log compression starts at 8 KB (Postgres compresses smaller text itself).
+- Tried and rejected after measuring: several API processes in one container (slower, batches get smaller), bigger Node young generation (no gain, more memory), a SQL-built workflow list (slower).

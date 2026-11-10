@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { config } from './config.js';
+import { fire } from './changes.js';
 
 /*
  * One tiny async interface over Postgres (pg). The Docker edition has no other database.
@@ -66,6 +67,16 @@ CREATE TABLE IF NOT EXISTS alert_state (
   },
   // The hourly sweep looks only at runs that are still queued/running: a tiny index instead of a scan of every stored run.
   { id: 5, sql: "CREATE INDEX IF NOT EXISTS idx_exec_active ON executions(started_at) WHERE status IN ('queued','running')" },
+  // Tells every process (through LISTEN/NOTIFY) when a workflow or webhook changed, so they can keep small caches; and tunes the
+  // executions table for the write-heavy life it has: room on each page for in-place updates, and earlier vacuuming.
+  { id: 6, raw: [
+    "CREATE OR REPLACE FUNCTION ff_notify_change() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_notify('ff_wf', ''); RETURN NULL; END $$",
+    'DROP TRIGGER IF EXISTS ff_wf_change ON workflows',
+    'CREATE TRIGGER ff_wf_change AFTER INSERT OR DELETE OR UPDATE OF definition, settings, static_data, active, name ON workflows FOR EACH STATEMENT EXECUTE FUNCTION ff_notify_change()',
+    'DROP TRIGGER IF EXISTS ff_hook_change ON webhooks',
+    'CREATE TRIGGER ff_hook_change AFTER INSERT OR DELETE OR UPDATE ON webhooks FOR EACH STATEMENT EXECUTE FUNCTION ff_notify_change()',
+    'ALTER TABLE executions SET (fillfactor = 85, autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_scale_factor = 0.05)',
+  ] },
 ];
 
 const splitStatements = (sql) => sql.split(/;\s*(?:\n|$)/).map((s) => s.trim()).filter(Boolean);
@@ -109,20 +120,28 @@ async function createPostgres() {
     throw new Error(`Postgres database encoding is ${enc}; LiteForeFlow requires UTF8 (create it with: CREATE DATABASE liteforeflow ENCODING 'UTF8' TEMPLATE template0)`);
   }
 
-  const make = (client) => ({
+  // A write to workflows/webhooks makes the in-process caches forget (changes.js); other processes hear it from the triggers.
+  const touchesWorkflows = (sql) => /^\s*(INSERT|UPDATE|DELETE)\b/i.test(sql) && /\b(workflows|webhooks)\b/i.test(sql);
+  const make = (client, onWrite) => ({
     all: async (sql, ...p) => (await client.query(toPg(sql), bind(p))).rows,
     get: async (sql, ...p) => (await client.query(toPg(sql), bind(p))).rows[0],
-    run: async (sql, ...p) => ({ changes: (await client.query(toPg(sql), bind(p))).rowCount }),
+    run: async (sql, ...p) => {
+      const res = await client.query(toPg(sql), bind(p));
+      if (touchesWorkflows(sql)) onWrite();
+      return { changes: res.rowCount };
+    },
   });
   return {
-    ...make(pool),
+    ...make(pool, fire),
     exec: async (sql) => { for (const st of splitStatements(sql)) await pool.query(st); },
     transaction: async (fn) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const out = await fn(make(client));
+        let touched = false;
+        const out = await fn(make(client, () => { touched = true; }));
         await client.query('COMMIT');
+        if (touched) fire(); // after the commit: a cache refilled before it would hold the old data
         return out;
       } catch (e) {
         await client.query('ROLLBACK').catch(() => {});
@@ -141,7 +160,7 @@ async function migrate() {
   for (const m of MIGRATIONS) {
     if (await driver.get('SELECT id FROM migrations WHERE id = ?', m.id)) continue;
     await driver.transaction(async (tx) => {
-      for (const st of splitStatements(m.sql)) await tx.run(st);
+      for (const st of m.raw ?? splitStatements(m.sql)) await tx.run(st);
       await tx.run('INSERT INTO migrations (id, applied_at) VALUES (?, ?)', m.id, new Date().toISOString());
     });
   }

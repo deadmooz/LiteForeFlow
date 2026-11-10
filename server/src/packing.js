@@ -9,7 +9,7 @@ const gzip = promisify(zlib.gzip);
  * so rows written by older builds keep working.
  */
 const PREFIX = 'gz:';
-const MIN_BYTES = 1024;
+const MIN_BYTES = 8192; // below this Postgres compresses the text itself (TOAST), and our gzip would only cost CPU
 
 export async function pack(json) {
   if (json == null || json.length < MIN_BYTES) return json;
