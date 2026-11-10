@@ -46,3 +46,10 @@ export function applyTheme(theme) {
   else delete document.documentElement.dataset.theme;
   try { theme === 'auto' ? localStorage.removeItem(THEME_KEY) : localStorage.setItem(THEME_KEY, theme); } catch { /* private mode */ }
 }
+
+/** An on/off setting remembered in this browser (a collapsed sidebar). Works without storage, it just is not remembered then. */
+export function useStoredFlag(key, initial = false) {
+  const [on, setOn] = useState(() => { try { const v = localStorage.getItem(key); return v === null ? initial : v === '1'; } catch { return initial; } });
+  const toggle = () => setOn((cur) => { const next = !cur; try { localStorage.setItem(key, next ? '1' : '0'); } catch { /* not remembered */ } return next; });
+  return [on, toggle];
+}

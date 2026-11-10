@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, laz
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { api, auth, firstName, initials, setUnauthorizedHandler } from './api.js';
 import { ErrorState, Loading } from './components/common.jsx';
-import { applyTheme, getTheme } from './hooks.js';
+import { applyTheme, getTheme, useStoredFlag } from './hooks.js';
 import Login from './pages/Login.jsx';
 import Workflows from './pages/Workflows.jsx';
 // The editor (with its canvas library) is the heavy part: it is only fetched when a workflow is opened.
@@ -84,10 +84,18 @@ function Shell() {
   const { me, logout } = useSession();
   const { pathname } = useLocation();
   const switchWorkspace = (id) => { auth.workspace = id; window.location.assign('/'); };
+  const [navHidden, toggleNav] = useStoredFlag('ff_hide_nav');
+  const editing = pathname.startsWith('/workflows/') && pathname.length > '/workflows/'.length; // building or editing an automation: the canvas gets the whole window (the editor has its own back button)
   return (
     <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">⚡ LiteForeFlow</div>
+      {!editing && navHidden && (
+        <div className="sidebar-rail"><button className="icon" onClick={toggleNav} aria-label="Show the menu" title="Show the menu">☰</button></div>
+      )}
+      {!editing && !navHidden && <aside className="sidebar">
+        <div className="brand-row">
+          <div className="brand">⚡ LiteForeFlow</div>
+          <button className="icon" onClick={toggleNav} aria-label="Hide the menu" title="Hide the menu">«</button>
+        </div>
         <nav>
           <NavLink to="/" end>Workflows</NavLink>
           <NavLink to="/templates">Templates</NavLink>
@@ -109,7 +117,7 @@ function Shell() {
           <ThemeToggle />
           <button className="link" onClick={logout}>Sign out</button>
         </div>
-      </aside>
+      </aside>}
       <main className="content">
         <Boundary key={pathname}>
         <Suspense fallback={<div className="page"><Loading rows={6} /></div>}>

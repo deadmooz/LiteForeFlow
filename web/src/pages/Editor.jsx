@@ -12,7 +12,8 @@ import AlertSettings from '../components/AlertSettings.jsx';
 import InsertPicker from '../components/InsertPicker.jsx';
 import { nodeTypes, ConnectionLine, suggestion, outputCount, toRF, toEdge } from '../components/FlowNode.jsx';
 import { useUndoRedo } from '../useUndoRedo.js';
-import { copyPayload, parseClip, clonePaste, findInsertTarget, planInsert, rewire, edgeMidpoint, nearestConnectTarget, handlePoint, handleIndex } from '../flow.js';
+import { useStoredFlag } from '../hooks.js';
+import { copyPayload, parseClip, clonePaste, findInsertTarget, planInsert, rewire, edgeMidpoint, nearestConnectTarget, handlePoint, handleIndex, tidyLayout } from '../flow.js';
 
 const GROUPS = [['trigger', 'Triggers'], ['core', 'Core'], ['logic', 'Logic'], ['data', 'Data'], ['ai', 'AI'], ['app', 'Apps']];
 const rid = () =>Math.random().toString(36).slice(2, 10);
@@ -45,6 +46,8 @@ function EditorInner() {
   const [results, setResults] = useState({}); // nodeId -> result from last run
   const [lastRun, setLastRun] = useState(null);
   const [search, setSearch] = useState('');
+  const [palHidden, togglePalette] = useStoredFlag('ff_hide_palette'); // the node list and the settings panel can be folded away (wide screens)
+  const [panelHidden, togglePanel] = useStoredFlag('ff_hide_panel');
   const [drawer, setDrawer] = useState(null); // 'palette' | 'panel' | null — only used on narrow screens
   const [loaded, setLoaded] = useState(false);
   const [candidate, setCandidate] = useState(null); // id of the line a step would be inserted into while it is dragged
@@ -365,6 +368,23 @@ function EditorInner() {
     setMessage({ kind: 'ok', text: `Connected ${nameOf(out.id)} to ${nameOf(into.id)}`, undo: true });
     markDirty();
   };
+  /* ---- tidy up: one click lays every step out neatly, left to right ---- */
+  const tidyUp = () => {
+    const list = nodesRef.current;
+    if (list.length < 2) return;
+    const positions = tidyLayout({
+      nodes: list.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, w: n.measured?.width ?? 190, h: n.measured?.height ?? 56 })),
+      edges: serializeRef.current().connections.map((c) => ({ from: c.from, to: c.to, fromOutput: c.fromOutput ?? 0 })),
+    });
+    setNodes((cur) => cur.map((n) => (positions.has(n.id) ? { ...n, position: positions.get(n.id), className: 'ff-settle' } : n)));
+    setTimeout(() => {
+      setNodes((cur) => cur.map((n) => (n.className === 'ff-settle' ? { ...n, className: undefined } : n)));
+      rf.fitView({ padding: 0.2, duration: 250 });
+    }, 300);
+    setMessage({ kind: 'ok', text: `Tidied ${list.length} steps`, undo: true });
+    markDirty();
+  };
+
   /** Clicking a palette item places the node to the right of the selection (or the last node) without overlapping. */
   const addAtCenter = (def) => {
     const anchor = nodes.find((n) => n.id === selectedId) ?? nodes[nodes.length - 1];
@@ -491,10 +511,13 @@ function EditorInner() {
         />
         <button className="icon" onClick={undo} disabled={!history.canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
         <button className="icon" onClick={redo} disabled={!history.canRedo} title="Redo (Ctrl+Shift+Z)" aria-label="Redo">↷</button>
+        <button onClick={tidyUp} disabled={nodes.length < 2} title="Tidy up: lay the steps out neatly from left to right">✨ Tidy up</button>
         {dirty && <span className="muted small">Unsaved changes</span>}
         <button className="mobile-only" onClick={() => setDrawer((d) => (d === 'palette' ? null : 'palette'))}>＋ Nodes</button>
         <button className="mobile-only" onClick={() => setDrawer((d) => (d === 'panel' ? null : 'panel'))}>Settings</button>
         <div className="spacer" />
+        <button className="icon desktop-only" onClick={togglePalette} aria-pressed={!palHidden} title={palHidden ? 'Show the node list' : 'Hide the node list'} aria-label="Toggle the node list">◧</button>
+        <button className="icon desktop-only" onClick={togglePanel} aria-pressed={!panelHidden} title={panelHidden ? 'Show the settings panel' : 'Hide the settings panel'} aria-label="Toggle the settings panel">◨</button>
         {message && <span className={message.kind === 'error' ? 'error inline-msg' : 'ok inline-msg'} role="status">{message.text}{message.undo && <> · <button className="link" onClick={() => { undo(); setMessage(null); }}>Undo</button></>}</span>}
         <button onClick={save} disabled={!!busy || !dirty}>{busy === 'save' ? 'Saving…' : 'Save'}</button>
         <button className="primary" onClick={run} disabled={!!busy}>{busy === 'run' ? 'Running…' : '▶ Run'}</button>
@@ -513,7 +536,7 @@ function EditorInner() {
       )}
 
       <div className="editor-body">
-        <aside className={`palette ${drawer === 'palette' ? 'open' : ''}`}>
+        <aside className={`palette ${drawer === 'palette' ? 'open' : ''} ${palHidden ? 'collapsed' : ''}`}>
           <input placeholder="Search nodes…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search nodes" />
           {GROUPS.map(([g, label]) => {
             const items = filtered.filter((t) => t.group === g);
@@ -577,7 +600,7 @@ function EditorInner() {
           )}
         </div>
 
-        <aside className={`panel ${drawer === 'panel' ? 'open' : ''}`}>
+        <aside className={`panel ${drawer === 'panel' ? 'open' : ''} ${panelHidden ? 'collapsed' : ''}`}>
           {selected ? (
             <>
               <div className="panel-head">

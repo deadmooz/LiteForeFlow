@@ -156,6 +156,107 @@ export function nearestConnectTarget({ point, boxes, edges, from, eligible, zoom
   return stay ?? best?.spot ?? null;
 }
 
+/* ------------------------------------ tidy up ------------------------------------ */
+/**
+ * Lays a messy canvas out neatly: every step goes in a column by how far it is from the start, left to right; steps in a column
+ * are ordered to keep lines from crossing and sit near the steps that feed them; separate flows are stacked one under the other.
+ * nodes: [{ id, x, y, w, h }]   edges: [{ from, to, fromOutput }]   Returns Map id -> { x, y } (the top-left stays where it was).
+ */
+export function tidyLayout({ nodes, edges, gapX = 90, gapY = 36, gapFlows = 90 }) {
+  const result = new Map();
+  if (!nodes.length) return result;
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const links = edges.filter((e) => byId.has(e.from) && byId.has(e.to) && e.from !== e.to);
+  const out = new Map(nodes.map((n) => [n.id, []]));
+  const inn = new Map(nodes.map((n) => [n.id, []]));
+  const readingOrder = (a, b) => a.y - b.y || a.x - b.x;
+
+  // separate flows = connected groups (ignoring direction)
+  const parent = new Map(nodes.map((n) => [n.id, n.id]));
+  const find = (id) => { let r = id; while (parent.get(r) !== r) r = parent.get(r); parent.set(id, r); return r; };
+  for (const e of links) parent.set(find(e.from), find(e.to));
+  const groups = new Map();
+  for (const n of [...nodes].sort(readingOrder)) { const r = find(n.id); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(n); }
+  const flows = [...groups.values()].sort((a, b) => Math.min(...a.map((n) => n.y)) - Math.min(...b.map((n) => n.y)));
+
+  // drop the lines that would close a loop (a depth-first walk in reading order), so every flow has a clear direction
+  const forward = [];
+  const state = new Map();
+  const adj = new Map(nodes.map((n) => [n.id, []]));
+  for (const e of links) adj.get(e.from).push(e);
+  const walk = (id) => {
+    state.set(id, 1);
+    for (const e of adj.get(id).sort((a, b) => readingOrder(byId.get(a.to), byId.get(b.to)))) {
+      if (state.get(e.to) === 1) continue; // back to a step still being walked: a loop
+      forward.push(e);
+      if (!state.has(e.to)) walk(e.to);
+    }
+    state.set(id, 2);
+  };
+  for (const n of [...nodes].sort(readingOrder)) if (!state.has(n.id)) walk(n.id);
+  for (const e of forward) { out.get(e.from).push(e); inn.get(e.to).push(e); }
+
+  const minX = Math.min(...nodes.map((n) => n.x));
+  const minY = Math.min(...nodes.map((n) => n.y));
+  let top = minY;
+  for (const members of flows) {
+    // column = longest path from a step that nothing feeds
+    const layer = new Map();
+    const colOf = (id) => {
+      if (layer.has(id)) return layer.get(id);
+      layer.set(id, 0); // guards the walk; the lines left are loop-free
+      const c = Math.max(0, ...inn.get(id).map((e) => colOf(e.from) + 1));
+      layer.set(id, c);
+      return c;
+    };
+    members.forEach((n) => colOf(n.id));
+    const cols = [];
+    members.forEach((n) => { (cols[layer.get(n.id)] ??= []).push(n); });
+    cols.forEach((c) => c.sort(readingOrder));
+
+    // order inside a column: a few sweeps that put each step near the average position of its neighbours
+    const rank = new Map();
+    const reindex = () => cols.forEach((c) => c.forEach((n, i) => rank.set(n.id, i)));
+    reindex();
+    const sweep = (list, neighbours, outputFirst) => {
+      const key = (n) => {
+        const ls = neighbours(n);
+        if (!ls.length) return rank.get(n.id);
+        return ls.reduce((sum, e) => sum + rank.get(outputFirst ? e.to : e.from) + (e.fromOutput ?? 0) * 0.01, 0) / ls.length;
+      };
+      const keys = new Map(list.map((n) => [n.id, key(n)]));
+      list.sort((a, b) => keys.get(a.id) - keys.get(b.id) || rank.get(a.id) - rank.get(b.id));
+    };
+    for (let pass = 0; pass < 4; pass += 1) {
+      for (let c = 1; c < cols.length; c += 1) { sweep(cols[c], (n) => inn.get(n.id), false); cols[c].forEach((n, i) => rank.set(n.id, i)); }
+      for (let c = cols.length - 2; c >= 0; c -= 1) { sweep(cols[c], (n) => out.get(n.id), true); cols[c].forEach((n, i) => rank.set(n.id, i)); }
+    }
+
+    // vertical position: near the middle of the steps that feed it, never overlapping the one above
+    const xOf = [];
+    let x = minX;
+    cols.forEach((c, i) => { xOf[i] = x; x += Math.max(...c.map((n) => n.w)) + gapX; });
+    const centre = new Map();
+    const placed = new Map();
+    cols.forEach((c, ci) => {
+      let floor = -Infinity;
+      c.forEach((n) => {
+        const feeders = inn.get(n.id);
+        const want = feeders.length ? feeders.reduce((s, e) => s + centre.get(e.from), 0) / feeders.length - n.h / 2 : (floor === -Infinity ? 0 : floor);
+        const y = Math.max(want, floor);
+        placed.set(n.id, { x: xOf[ci], y });
+        centre.set(n.id, y + n.h / 2);
+        floor = y + n.h + gapY;
+      });
+    });
+    const flowTop = Math.min(...members.map((n) => placed.get(n.id).y));
+    const flowBottom = Math.max(...members.map((n) => placed.get(n.id).y + n.h));
+    for (const n of members) { const p = placed.get(n.id); result.set(n.id, { x: Math.round(p.x), y: Math.round(p.y - flowTop + top) }); }
+    top += flowBottom - flowTop + gapFlows;
+  }
+  return result;
+}
+
 /* ------------------------------------ copy and paste ------------------------------------ */
 export const CLIP_MARK = 'liteforeflow-steps';
 
