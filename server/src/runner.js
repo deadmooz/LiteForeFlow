@@ -1,10 +1,13 @@
 import os from 'node:os';
 import { all, get, run, uid, now } from './db.js';
 import { runWorkflow } from './engine.js';
-import { reserveRun, refundRun, getPlan } from './plans.js';
+import { reserveRunAndInsert, reserveRunsAndInsert, refundRun, plans, LimitError } from './plans.js';
+import { createBatcher } from './batch.js';
+import { onWorkflowChange, isLive } from './changes.js';
 import { enqueue } from './queue.js';
 import { config } from './config.js';
 import { pack } from './packing.js';
+import { notifyFailure } from './alerts.js';
 
 export const workerId = `${os.hostname()}:${process.pid}`;
 
@@ -19,6 +22,23 @@ export function parseWorkflow(row) {
 
 export const loadWorkflow = async (id, workspaceId) =>
   parseWorkflow(await get('SELECT * FROM workflows WHERE id = ? AND workspace_id = ?', id, workspaceId));
+
+// A worker runs the same few workflows over and over: keep their parsed form until something changes (changes.js).
+// Each run gets its own copy of the static data, which the engine edits in place.
+const wfCache = new Map();
+const copyStatic = (sd) => (sd && Object.keys(sd).length ? structuredClone(sd) : {});
+onWorkflowChange(() => wfCache.clear());
+export async function loadWorkflowCached(id, workspaceId) {
+  const hit = isLive() ? wfCache.get(id) : null;
+  if (hit && hit.wf.workspaceId === workspaceId && hit.exp > Date.now()) return { ...hit.wf, staticData: copyStatic(hit.wf.staticData) };
+  const wf = await loadWorkflow(id, workspaceId);
+  if (wf && isLive()) {
+    if (wfCache.size >= 200) wfCache.clear();
+    wfCache.set(id, { wf, exp: Date.now() + 60_000 });
+    return { ...wf, staticData: copyStatic(wf.staticData) };
+  }
+  return wf;
+}
 
 /* ------------------------------ execution records ----------------------------- */
 
@@ -57,14 +77,51 @@ function compactResults(results) {
   return { json: JSON.stringify(Object.fromEntries(Object.entries(results).map(([id, r]) => [id, { ...r, input: undefined, output: undefined, note: 'data omitted (too large)' }]))), truncated };
 }
 
+const insertBatch = createBatcher(async (items) => {
+  const out = new Array(items.length);
+  const byWorkspace = new Map();
+  items.forEach((it, i) => { if (!byWorkspace.has(it.workspaceId)) byWorkspace.set(it.workspaceId, []); byWorkspace.get(it.workspaceId).push(i); });
+  await Promise.all([...byWorkspace].map(async ([workspaceId, idx]) => {
+    try {
+      await reserveRunsAndInsert(workspaceId, idx.map((i) => items[i]));
+    } catch (e) {
+      if (!(e instanceof LimitError)) { for (const i of idx) out[i] = e; return; }
+      // The cap cannot take all of them: let each run try for itself, so the ones that still fit are accepted.
+      for (const i of idx) {
+        const it = items[i];
+        try {
+          await reserveRunAndInsert(workspaceId, 'INSERT INTO executions (id, workspace_id, workflow_id, workflow_name, status, mode, started_at) SELECT ?,?,?,?,?,?,?',
+            [it.id, workspaceId, it.workflowId, it.name, 'queued', it.mode, it.at]);
+        } catch (e2) { out[i] = e2; }
+      }
+    }
+  }));
+  return out;
+}, { maxItems: 100 });
+
+/** The finished state of runs, written many at a time. A run that is no longer queued/running (lost, failed by the queue) is left alone. */
+const finishBatch = createBatcher(async (rows) => {
+  const col = (k) => rows.map((r) => r[k]);
+  await run(
+    `UPDATE executions e SET status = v.status, finished_at = v.finished_at, data = v.data, error = v.error, worker = v.worker
+     FROM unnest(?::text[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[]) AS v(id, status, finished_at, data, error, worker)
+     WHERE e.id = v.id AND e.status IN ('queued','running')`,
+    col('id'), col('status'), col('finishedAt'), col('data'), col('error'), col('worker'),
+  );
+  return [];
+}, { maxItems: 50, sizeOf: (r) => (r.data?.length ?? 0) + (r.error?.length ?? 0) + 200 });
+
 /** Counts the run against the plan and inserts a `queued` execution row. Returns its id. */
 export async function createExecution({ workflow, mode }) {
-  if (mode !== 'subworkflow' && mode !== 'error') await reserveRun(workflow.workspaceId);
   const id = uid();
-  await run(
-    'INSERT INTO executions (id, workspace_id, workflow_id, workflow_name, status, mode, started_at) VALUES (?,?,?,?,?,?,?)',
-    id, workflow.workspaceId, workflow.id, workflow.name, 'queued', mode, now(),
-  );
+  if (mode === 'subworkflow' || mode === 'error') {
+    await run('INSERT INTO executions (id, workspace_id, workflow_id, workflow_name, status, mode, started_at) VALUES (?,?,?,?,?,?,?)',
+      id, workflow.workspaceId, workflow.id, workflow.name, 'queued', mode, now());
+    return id;
+  }
+  // Counted and recorded together with the other runs arriving at the same moment: one statement, one commit.
+  const failure = await insertBatch.add({ id, workspaceId: workflow.workspaceId, workflowId: workflow.id, name: workflow.name, mode, at: now() });
+  if (failure instanceof Error) throw failure;
   return id;
 }
 
@@ -77,11 +134,12 @@ export async function failExecution(executionId, message) {
 
 /** Runs an already-created execution in this process and records the outcome. */
 export async function runExecution({ executionId, workflow, mode, triggerNodeId, triggerItems, depth = 0 }) {
-  const claimed = await run(
-    "UPDATE executions SET status = 'running', started_at = ?, worker = ? WHERE id = ? AND status = 'queued'",
-    now(), workerId, executionId,
-  );
-  if (!claimed.changes) return { executionId, status: 'skipped', error: null, lastOutput: [] }; // duplicate delivery or already reaped
+  // Most runs finish in a few milliseconds, so writing "running" first would be a wasted commit. Only a run that is still going after
+  // a moment is marked (the queue already delivers each job at most once, and the final write skips runs that were closed meanwhile).
+  const claimTimer = setTimeout(() => {
+    run("UPDATE executions SET status = 'running', worker = ? WHERE id = ? AND status = 'queued'", workerId, executionId).catch(() => {});
+  }, 300);
+  claimTimer.unref?.();
 
   const staticBefore = JSON.stringify(workflow.staticData ?? {}); // the engine mutates staticData in place
   let result;
@@ -98,10 +156,11 @@ export async function runExecution({ executionId, workflow, mode, triggerNodeId,
   // Editor runs always keep it so the canvas can show results.
   const keepData = result.status !== 'success' || mode === 'manual' || (workflow.settings?.saveSuccessData ?? config.saveSuccessData);
   const { json, truncated } = keepData ? compactResults(result.results) : { json: null, truncated: false };
-  await run(
-    'UPDATE executions SET status = ?, finished_at = ?, data = ?, error = ? WHERE id = ?',
-    result.status, result.finishedAt, json && pack(json), result.error ? JSON.stringify({ ...result.error, truncated }) : null, executionId,
-  );
+  clearTimeout(claimTimer);
+  await finishBatch.add({
+    id: executionId, status: result.status, finishedAt: result.finishedAt, data: json && await pack(json),
+    error: result.error ? JSON.stringify({ ...result.error, truncated }) : null, worker: workerId,
+  });
   // Most workflows never touch static data; only write when it actually changed.
   const staticJson = JSON.stringify(result.staticData ?? {});
   if (staticJson !== staticBefore) {
@@ -110,8 +169,12 @@ export async function runExecution({ executionId, workflow, mode, triggerNodeId,
 
   if (result.status === 'error' && mode !== 'error' && mode !== 'subworkflow') {
     submitErrorWorkflow(workflow, executionId, result.error).catch((e) => console.error('[error-workflow]', e.message));
+    // Someone is watching an editor run, so only unattended runs (webhooks, schedules, polling) send an alert.
+    if (mode !== 'manual') notifyFailure(workflow, result.error).catch((e) => console.error('[alerts]', e.message));
   }
-  return { executionId, status: result.status, error: result.error, lastOutput: result.lastOutput, response: result.response };
+  // A failed run answers with its error only. Its last output is the data that was fed into the failing step (often the whole
+  // request body); callers never read it, and the queue would copy it into Redis for every failure.
+  return { executionId, status: result.status, error: result.error, lastOutput: result.status === 'error' ? [] : result.lastOutput, response: result.response };
 }
 
 /** Creates and runs an execution in the current process (sub-workflows, schedules, polling). */
@@ -179,9 +242,12 @@ export async function testNodeJob({ workflowId, workspaceId, definition, nodeId,
 
 /** Deletes expired logs and fails executions whose worker vanished without reporting back. */
 export async function pruneExecutions() {
-  for (const w of await all('SELECT id FROM workspaces')) {
-    const days = (await getPlan(w.id)).logRetentionDays;
-    await run('DELETE FROM executions WHERE workspace_id = ? AND started_at < ?', w.id, new Date(Date.now() - days * 86_400_000).toISOString());
+  // One statement per plan (not one per workspace): a plan's logs all expire after the same number of days.
+  const others = Object.keys(plans).filter((k) => k !== 'free');
+  for (const [id, plan] of Object.entries(plans)) {
+    const cutoff = new Date(Date.now() - plan.logRetentionDays * 86_400_000).toISOString();
+    const test = id === 'free' ? `w.plan NOT IN (${others.map(() => '?').join(',')})` : 'w.plan = ?'; // unknown plan names count as free
+    await run(`DELETE FROM executions e USING workspaces w WHERE w.id = e.workspace_id AND ${test} AND e.started_at < ?`, ...(id === 'free' ? others : [id]), cutoff);
   }
   await run(
     "UPDATE executions SET status = 'error', finished_at = ?, error = ? WHERE status IN ('queued','running') AND started_at < ?",

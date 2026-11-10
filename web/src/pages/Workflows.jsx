@@ -1,17 +1,60 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, fmtDate } from '../api.js';
-import { Modal } from '../components/common.jsx';
+import { api, fmtAgo, fmtDate, firstName, greeting } from '../api.js';
+import { useSession } from '../App.jsx';
+import { EmptyState, ErrorState, Loading, Modal } from '../components/common.jsx';
+import { useDebounced, useSlashFocus } from '../hooks.js';
 
 const TRIGGER_LABEL = { 'trigger.webhook': 'Webhook', 'trigger.cron': 'Schedule', 'trigger.rss': 'RSS', 'trigger.manual': 'Manual', 'trigger.error': 'Error' };
+
+/** One table row. Memoised: switching one workflow on does not re-render the others. */
+const WorkflowRow = React.memo(function WorkflowRow({ w, act }) {
+  return (
+    <tr key={w.id}>
+      <td data-label="Name"><Link to={`/workflows/${w.id}`}><b>{w.name}</b></Link></td>
+      <td data-label="Trigger">{[...new Set(w.triggers.map((t) => TRIGGER_LABEL[t] ?? t))].join(', ') || '—'}</td>
+      <td data-label="Nodes">{w.nodeCount}</td>
+      <td className="muted" data-label="Updated" title={fmtDate(w.updatedAt)}>{fmtAgo(w.updatedAt)}</td>
+      <td data-label="Active">
+        <label className="switch" aria-label={`Toggle ${w.name}`}>
+          <input type="checkbox" checked={w.active} onChange={() => act(() => api(`/workflows/${w.id}/${w.active ? 'deactivate' : 'activate'}`, { method: 'POST' }))} />
+          <span>{w.active ? 'On' : 'Off'}</span>
+        </label>
+      </td>
+      <td className="actions">
+        <button className="link" onClick={() => act(() => api(`/workflows/${w.id}/duplicate`, { method: 'POST' }))}>Duplicate</button>
+        <button className="link danger" onClick={() => window.confirm(`Delete "${w.name}" and its execution history?`) && act(() => api(`/workflows/${w.id}`, { method: 'DELETE' }))}>Delete</button>
+      </td>
+    </tr>
+  );
+});
 
 export default function Workflows() {
   const [list, setList] = useState(null);
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
+  const { me } = useSession();
+  const [query, setQuery] = useState('');
+  const q = useDebounced(query, 200).trim().toLowerCase();
+  const searchRef = useSlashFocus();
   const navigate = useNavigate();
 
-  const load = () => api('/workflows').then(setList).catch((e) => setError(e.message));
+  const load = () => api('/workflows').then((fresh) => {
+    setList((prev) => {
+      if (!prev) return fresh;
+      const old = new Map(prev.map((w) => [w.id, w]));
+      return fresh.map((w) => (JSON.stringify(old.get(w.id)) === JSON.stringify(w) ? old.get(w.id) : w)); // unchanged rows keep their identity, so they skip rendering
+    });
+    setError('');
+  }).catch((e) => setError(e.message));
+  const summary = useMemo(() => {
+    if (!list) return 'Here is what is running.';
+    if (list.length === 0) return 'Nothing here yet. Let us build your first one.';
+    const on = list.filter((w) => w.active).length;
+    if (on === 0) return `You have ${list.length} workflow${list.length === 1 ? '' : 's'}, and none are switched on yet.`;
+    return `${on} of your ${list.length} workflow${list.length === 1 ? ' is' : 's are'} switched on and doing the work for you.`;
+  }, [list]);
+  const shown = useMemo(() => (q && list ? list.filter((w) => w.name.toLowerCase().includes(q)) : list), [list, q]);
   useEffect(() => { load(); }, []);
 
   const create = async () => {
@@ -25,23 +68,33 @@ export default function Workflows() {
     navigate(`/workflows/${wf.id}`);
   };
 
-  const act = async (fn) => { try { await fn(); await load(); } catch (e) { setError(e.message); } };
+  const act = useCallback(async (fn) => { try { await fn(); await load(); } catch (e) { setError(e.message); } }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Workflows</h1>
-        <div className="row gap">
+        <div className="hello">
+          <h1>{greeting()}, <span className="name">{firstName(me?.user)}</span></h1>
+          <p>{summary}</p>
+        </div>
+        <div className="toolbar">
+          {list?.length > 4 && (
+            <div className="search">
+              <input ref={searchRef} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search workflows  ( / )" aria-label="Search workflows" />
+            </div>
+          )}
           <button onClick={() => setImporting(true)}>Import from n8n</button>
           <Link to="/templates"><button>Browse templates</button></Link>
           <button className="primary" onClick={create}>＋ New workflow</button>
         </div>
       </div>
-      {error && <div className="error" role="alert">{error}</div>}
-      {!list ? <p className="muted">Loading…</p> : list.length === 0 ? (
+      {error && list && <div className="error" role="alert">{error}</div>}
+      {!list ? (error ? <ErrorState message={error} onRetry={() => { setError(''); load(); }} /> : <Loading rows={6} />) : shown.length === 0 && list.length > 0 ? (
+        <EmptyState icon="⌕" title="No match">No workflow is called “{query}”.</EmptyState>
+      ) : list.length === 0 ? (
         <div className="card empty">
-          <h3>No workflows yet</h3>
-          <p className="muted">Start from a template, import an n8n export, or build from scratch.</p>
+          <h3>Your first workflow is a few clicks away</h3>
+          <p className="muted">Pick a template to see how it works, bring one over from n8n, or start with a blank canvas.</p>
           <div className="row gap center-x">
             <Link to="/templates"><button className="primary">Browse templates</button></Link>
             <button onClick={create}>Start from scratch</button>
@@ -51,24 +104,7 @@ export default function Workflows() {
         <table className="table">
           <thead><tr><th>Name</th><th>Trigger</th><th>Nodes</th><th>Updated</th><th>Active</th><th /></tr></thead>
           <tbody>
-            {list.map((w) => (
-              <tr key={w.id}>
-                <td data-label="Name"><Link to={`/workflows/${w.id}`}><b>{w.name}</b></Link></td>
-                <td data-label="Trigger">{[...new Set(w.triggers.map((t) => TRIGGER_LABEL[t] ?? t))].join(', ') || '—'}</td>
-                <td data-label="Nodes">{w.nodeCount}</td>
-                <td className="muted" data-label="Updated">{fmtDate(w.updatedAt)}</td>
-                <td data-label="Active">
-                  <label className="switch" aria-label={`Toggle ${w.name}`}>
-                    <input type="checkbox" checked={w.active} onChange={() => act(() => api(`/workflows/${w.id}/${w.active ? 'deactivate' : 'activate'}`, { method: 'POST' }))} />
-                    <span>{w.active ? 'On' : 'Off'}</span>
-                  </label>
-                </td>
-                <td className="actions">
-                  <button className="link" onClick={() => act(() => api(`/workflows/${w.id}/duplicate`, { method: 'POST' }))}>Duplicate</button>
-                  <button className="link danger" onClick={() => window.confirm(`Delete "${w.name}" and its execution history?`) && act(() => api(`/workflows/${w.id}`, { method: 'DELETE' }))}>Delete</button>
-                </td>
-              </tr>
-            ))}
+            {shown.map((w) => <WorkflowRow key={w.id} w={w} act={act} />)}
           </tbody>
         </table>
       )}

@@ -25,12 +25,12 @@ Put them in `.env` next to `docker-compose.yml` (see `.env.example`). Only `LITE
 | `ALLOW_SIGNUP` | `true` | Set to `false` once your accounts exist |
 | `BLOCK_PRIVATE_NETWORK` | `true` | The HTTP node cannot call private/internal addresses (the configured Ollama address is still allowed) |
 | `OLLAMA_HOST` | `http://host.docker.internal:11434` | Where Ollama runs |
+| `ALERT_COOLDOWN_MIN` | `10` | At most one failure alert per workflow in this many minutes (`0` = no limit) |
 | `MAX_CONCURRENCY` | `10` | Workflows each worker container runs at once |
 | `SAVE_SUCCESS_DATA` | `true` | `false` keeps only a one-line record of successful runs (saves space) |
 | `PLUGINS_DIR` | `/plugins` (= `./plugins-user`) | Folder with your own plugins |
 
-Set automatically by the image: `LITEFOREFLOW_REQUIRE_STRONG_SANDBOX=true` (refuse the weaker code sandbox),
-`DATA_DIR=/data`, and Node memory flags. More tuning (all optional): `MAX_QUEUE_DEPTH`, `QUEUE_ENQUEUE_TIMEOUT_MS`,
+Set automatically by the image: `LITEFOREFLOW_IN_DOCKER=true`, `DATA_DIR=/data`, and Node memory flags. More tuning (all optional): `MAX_QUEUE_DEPTH`, `QUEUE_ENQUEUE_TIMEOUT_MS`,
 `WORKER_LOCK_MS`, `WORKER_STALLED_INTERVAL_MS`, `PG_POOL_SIZE`, `PG_CONNECT_TIMEOUT_MS`, `PG_QUERY_TIMEOUT_MS`, `SANDBOX_MEMORY_MB`.
 
 ## Plugins in Docker
@@ -63,7 +63,7 @@ Another machine runs Ollama? Set `OLLAMA_HOST=http://that-machine:11434` in `.en
 
 ```bash
 npm install
-npm test                     # all Lite suites on SQLite (no services needed)
+npm test                     # the main suites on Postgres (starts a throwaway Postgres container; Docker must be running)
 # against real Postgres + Redis (set TEST_DATABASE_URL and TEST_REDIS_URL first):
 npm run test:all             # + the multi-process worker tests and the plugin-sync test
 node server/test/qa/qa-infra.mjs                 # production-stack scenarios incl. Redis/Postgres outage drills
@@ -74,7 +74,7 @@ node server/test/e2e-compose.mjs                 # fan-out, cron, usage metering
 
 ### What was verified for this edition
 
-- Lite suites on the Docker edition's code: 59 tests (SQLite), 16 on Postgres, 16 on Postgres + Redis, 3 multi-process worker tests,
+- Lite suites on the Docker edition's code: the same suites on Postgres, 16 on Postgres + Redis, 3 multi-process worker tests,
   3 cross-process plugin tests, 200 black-box scenarios (0 failures), 16 white-box checks, 8 production-stack scenarios with outage drills.
 - The image builds (391 MB) and runs as a non-root user; compose with 2 workers: plugins on both workers, plugin switches reaching both,
   a plugin dropped in from the host, schedules firing once per tick, plugin state surviving restarts, and a real **Ollama** model

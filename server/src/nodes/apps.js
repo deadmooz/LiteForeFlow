@@ -1,7 +1,7 @@
-import crypto from 'node:crypto';
 import { defineNode, credentialProperty } from './registry.js';
 import { httpRequest, formEncode } from '../http.js';
 import { config } from '../config.js';
+import { slackPost, telegramSend, smtpTransport } from '../messaging.js';
 
 /* Each integration is one declarative object. All of these call vendor REST APIs directly. */
 
@@ -23,12 +23,9 @@ defineNode({
   ],
   async executeItem(ctx, item, i) {
     const { token } = await ctx.credential();
-    const res = await httpRequest({
-      method: 'POST', url: 'https://slack.com/api/chat.postMessage', headers: { authorization: `Bearer ${token}` },
-      body: { channel: (await ctx.param('channel', i)), text: (await ctx.param('text', i)) },
-    });
-    if (!res.data.ok) throw new Error(`Slack error: ${res.data.error}`);
-    return { ok: true, channel: res.data.channel, ts: res.data.ts };
+    const data = await slackPost(token, await ctx.param('channel', i), await ctx.param('text', i));
+    if (!data.ok) throw new Error(`Slack error: ${data.error}`);
+    return { ok: true, channel: data.channel, ts: data.ts };
   },
 });
 
@@ -46,11 +43,8 @@ defineNode({
     const { token } = await ctx.credential();
     const pm = ctx.rawParam('parseMode');
     try {
-      const res = await httpRequest({
-        method: 'POST', url: `https://api.telegram.org/bot${token}/sendMessage`,
-        body: { chat_id: (await ctx.param('chatId', i)), text: (await ctx.param('text', i)), ...(pm ? { parse_mode: pm } : {}) },
-      });
-      return { ok: true, messageId: res.data.result?.message_id };
+      const data = await telegramSend(token, { chat_id: (await ctx.param('chatId', i)), text: (await ctx.param('text', i)), ...(pm ? { parse_mode: pm } : {}) });
+      return { ok: true, messageId: data.result?.message_id };
     } catch (e) { return apiError(e, (d) => d.description && `Telegram error: ${d.description}`); }
   },
 });
@@ -315,11 +309,7 @@ defineNode({
   ],
   async execute(ctx, inputs) {
     const c = await ctx.credential();
-    const nodemailer = (await import('nodemailer')).default;
-    const transport = nodemailer.createTransport({
-      host: c.host, port: Number(c.port) || 587, secure: !!c.secure,
-      auth: c.user ? { user: c.user, pass: c.password } : undefined,
-    });
+    const transport = await smtpTransport(c);
     const out = [];
     for (let i = 0; i < inputs[0].length; i += 1) {
       const info = await transport.sendMail({
@@ -332,53 +322,3 @@ defineNode({
   },
 });
 
-/* -------------------------------- Google Sheets ------------------------------- */
-const gTokenCache = new Map();
-async function googleToken(serviceAccountJson, scope) {
-  const key = JSON.parse(serviceAccountJson);
-  const cacheKey = `${key.client_email}|${scope}`;
-  const cached = gTokenCache.get(cacheKey);
-  if (cached && cached.exp > Date.now() + 60000) return cached.token;
-  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
-  const iat = Math.floor(Date.now() / 1000);
-  const unsigned = `${b64({ alg: 'RS256', typ: 'JWT' })}.${b64({ iss: key.client_email, scope, aud: 'https://oauth2.googleapis.com/token', iat, exp: iat + 3600 })}`;
-  const sig = crypto.sign('RSA-SHA256', Buffer.from(unsigned), key.private_key).toString('base64url');
-  const res = await httpRequest({
-    method: 'POST', url: 'https://oauth2.googleapis.com/token', bodyType: 'form',
-    body: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: `${unsigned}.${sig}` },
-  });
-  gTokenCache.set(cacheKey, { token: res.data.access_token, exp: Date.now() + (res.data.expires_in ?? 3600) * 1000 });
-  return res.data.access_token;
-}
-
-defineNode({
-  type: 'app.googleSheets', name: 'Google Sheets', group: 'app', icon: '📊', credentialType: 'googleServiceAccount',
-  description: 'Append rows to or read rows from a sheet. Share the sheet with the service account email first.',
-  properties: [
-    credentialProperty('googleServiceAccount'),
-    { name: 'operation', label: 'Operation', type: 'options', default: 'appendRow', options: ['appendRow', 'getRows'] },
-    { name: 'spreadsheetId', label: 'Spreadsheet ID', type: 'string', required: true, help: 'The long id in the sheet URL.' },
-    { name: 'range', label: 'Sheet / range', type: 'string', default: 'Sheet1', help: 'e.g. Sheet1 or Sheet1!A:D' },
-    { name: 'values', label: 'Row values (JSON array)', type: 'json', default: '["{{ $json.name }}", "{{ $json.email }}"]', showIf: { operation: 'appendRow' } },
-  ],
-  async executeItem(ctx, item, i) {
-    const { json } = await ctx.credential();
-    const op = ctx.rawParam('operation');
-    const token = await googleToken(json, 'https://www.googleapis.com/auth/spreadsheets');
-    const headers = { authorization: `Bearer ${token}` };
-    const base = `https://sheets.googleapis.com/v4/spreadsheets/${(await ctx.param('spreadsheetId', i))}/values/${encodeURIComponent((await ctx.param('range', i)))}`;
-    try {
-      if (op === 'getRows') {
-        const res = await httpRequest({ url: base, headers });
-        const [head = [], ...rows] = res.data.values ?? [];
-        return rows.map((r) => Object.fromEntries(head.map((h, idx) => [h, r[idx] ?? ''])));
-      }
-      const values = (await ctx.jsonParam('values', i));
-      if (!Array.isArray(values)) throw new Error('Row values must be a JSON array');
-      const res = await httpRequest({
-        method: 'POST', url: `${base}:append`, headers, query: { valueInputOption: 'USER_ENTERED' }, body: { values: [values] },
-      });
-      return { updatedRange: res.data.updates?.updatedRange, updatedRows: res.data.updates?.updatedRows };
-    } catch (e) { return apiError(e, (d) => d.error?.message && `Google Sheets error: ${d.error.message}`); }
-  },
-});

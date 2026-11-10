@@ -12,7 +12,6 @@ import { webhookRouter } from './routes/webhooks.js';
 import { pluginsRouter } from './routes/plugins.js';
 import './jobs.js'; // registers the job handler with the queue
 import { queueMode } from './queue.js';
-import { dialect } from './db.js';
 import { sandboxMode } from './sandbox.js';
 
 const STATIC_TYPES = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
@@ -71,7 +70,7 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
   app.use(express.text({ type: ['text/*'], limit: '1mb' }));
 
-  app.get('/api/health', (req, res) => res.json({ ok: true, db: dialect, queue: queueMode, sandbox: sandboxMode() }));
+  app.get('/api/health', (req, res) => res.json({ ok: true, db: 'postgres', queue: queueMode, sandbox: sandboxMode() }));
   app.use('/webhook', webhookRouter);
 
   app.use('/api/auth', authRouter);
@@ -91,7 +90,8 @@ export function createApp() {
     // Vite fingerprints everything under /assets, so browsers can keep it forever instead of re-downloading.
     app.use('/assets', express.static(path.join(dist, 'assets'), { immutable: true, maxAge: '1y' }));
     app.use(express.static(dist, { maxAge: 0 }));
-    app.get('*', (req, res) => res.sendFile(path.join(dist, 'index.html')));
+    // A page route (/workflows/abc) is the editor's index.html; a missing FILE (/assets/old.js) is a real 404, never HTML a browser would try to run.
+    app.get('*', (req, res) => (path.extname(req.path) ? res.status(404).type('text/plain').send('Not found') : res.sendFile(path.join(dist, 'index.html'))));
   }
 
   // eslint-disable-next-line no-unused-vars

@@ -82,9 +82,8 @@ function createMemoryDriver() {
 
 /* ------------------------------------ bullmq ---------------------------------- */
 async function createBullDriver() {
-  let bull; let IORedis;
-  try { bull = await import('bullmq'); ({ default: IORedis } = await import('ioredis')); } catch { throw new Error('Redis queue support is not installed. Run:  npm run scale-up'); }
-  const { Queue, Worker, QueueEvents } = bull;
+  const { Queue, Worker, QueueEvents } = await import('bullmq');
+  const { default: IORedis } = await import('ioredis');
   const connection = new IORedis(config.redisUrl, { maxRetriesPerRequest: null });
   connection.on('error', (e) => console.error('[redis]', e.message));
   // BullMQ does not own connections we hand it, so every duplicate must be closed by us on shutdown.
@@ -93,12 +92,17 @@ async function createBullDriver() {
   const name = config.queueName;
   const queue = new Queue(name, {
     connection,
-    defaultJobOptions: { attempts: 1, removeOnComplete: { age: 3600, count: 2000 }, removeOnFail: { age: 86400 } },
+    streams: { events: { maxLen: 1000 } }, // the event log (which carries each finished run's answer) is capped, not 10,000 entries long
+    // Results live in the executions table; Redis only needs to remember a finished job for as long as a caller may still ask for it.
+    defaultJobOptions: { attempts: 1, removeOnComplete: { age: 600, count: 500 }, removeOnFail: { age: 86400, count: 1000 } },
   });
   // Each in-flight call holds one short-lived 'closing' listener; many simultaneous webhooks are normal, not a leak.
   queue.setMaxListeners(Math.max(100, config.maxQueueDepth));
   let worker = null;
   let events = null;
+  // The queue length is only a safety valve, so it is looked up at most four times a second, not on every call.
+  let depth = 0;
+  let depthAt = 0;
 
   const getEvents = async () => {
     if (!events) {
@@ -116,10 +120,13 @@ async function createBullDriver() {
     async enqueue(payload, { wait, jobId } = {}) {
       // While Redis is unreachable ioredis queues commands forever, so bound the time we are willing to wait and answer 503.
       const { job, ev } = await within(config.queueEnqueueTimeoutMs, 'The execution queue is unavailable (cannot reach Redis); please retry shortly', async () => {
-        const depth = await queue.getWaitingCount();
+        if (Date.now() - depthAt > 250) { depth = await queue.getWaitingCount(); depthAt = Date.now(); }
         if (depth >= config.maxQueueDepth) throw unavailable('The execution queue is full, please retry shortly');
         const events = wait ? await getEvents() : null; // subscribe before adding so the completion event cannot be missed
-        return { ev: events, job: await queue.add(payload.kind, payload, jobId ? { jobId } : undefined) };
+        // Nobody asks for the answer of a job that was not waited for: let Redis forget it at once (saves memory and a round trip).
+        const added = await queue.add(payload.kind, payload, { ...(jobId ? { jobId } : {}), ...(wait ? {} : { removeOnComplete: true }) });
+        depth += 1; // between two checks a burst still counts
+        return { ev: events, job: added };
       });
       if (!wait) return undefined;
       return job.waitUntilFinished(ev, WAIT_TIMEOUT_MS);
@@ -142,6 +149,11 @@ async function createBullDriver() {
       });
       worker.on('error', (e) => console.error('[worker]', e.message));
       worker.on('failed', (job, e) => console.error(`[worker] job ${job?.id} failed:`, e.message));
+      // A finished job no longer needs its payload (the trigger items can be megabytes; the run's data is in the database).
+      // Dropping it keeps Redis small no matter how many finished jobs are retained.
+      const slim = (job) => job?.updateData({ kind: job.data?.kind, executionId: job.data?.executionId }).catch(() => {});
+      worker.on('completed', (job) => { if (job?.opts?.removeOnComplete !== true) slim(job); });
+      worker.on('failed', slim);
       await worker.waitUntilReady();
     },
     startEvents: getEvents,

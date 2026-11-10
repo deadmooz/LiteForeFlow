@@ -33,15 +33,15 @@ Stop with `docker compose down` (your data stays); `docker compose logs -f` show
 - **Plugins**: Respond to Webhook, data tools (Filter, Sort, Remove Duplicates, Date & Time, Crypto, batches), a REST connector;
   add your own - [docs/PLUGINS.md](docs/PLUGINS.md)
 - **Free local AI with Ollama**, plus OpenAI / Anthropic / any OpenAI-compatible API (LLM and AI Agent blocks)
-- **Triggers**: Webhook, Schedule, RSS, Error handler; HTTP, email, Postgres, Slack, Telegram, Discord, Notion, Airtable, Stripe, HubSpot, Sheets
+- **Triggers**: Webhook, Schedule, RSS, Error handler; HTTP, email, Postgres, Slack, Telegram, Discord, Notion, Airtable, Stripe, HubSpot
 - **Safe by default**: encrypted credentials, sandboxed code, plan limits, security headers, private-network blocking
 
 ## What Docker adds
 
 | | Lite edition | Docker edition |
 |---|---|---|
-| Start | double-click / `npm start` | `docker compose up` |
-| Database | one SQLite file | **Postgres** |
+| Start | double-click / `npm start` | `docker compose up -d --build` (the only way: it refuses to run outside Docker) |
+| Database | one SQLite file | **Postgres only** (no SQLite) |
 | Running workflows | inside the one process | **Redis queue + any number of worker containers** |
 | If something crashes | restart it | queued runs wait; a crashed worker's run is marked failed (never repeated) |
 | Several servers | no | yes (API + workers share Postgres and Redis) |

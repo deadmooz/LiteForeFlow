@@ -35,19 +35,38 @@ export const getPlan = async (workspaceId) => {
 const currentMonth = () => new Date().toISOString().slice(0, 7);
 
 /**
- * Atomically counts one run, refusing it when the monthly cap is reached.
- * Metered separately from the executions table so log pruning never resets a customer's usage.
+ * Counts one run AND records its execution row in one statement (one round trip instead of two), refusing it when the cap is reached.
+ * `insertSql` is "INSERT INTO ... SELECT ?, ?, ... " without a WHERE: the cap check is added here.
  */
-export async function reserveRun(workspaceId) {
+export async function reserveRunAndInsert(workspaceId, insertSql, insertParams) {
   const plan = await getPlan(workspaceId);
-  // One atomic statement: insert the month's counter or bump it, but only while under the cap.
   const { changes } = await run(
-    'INSERT INTO usage (workspace_id, month, runs) VALUES (?, ?, 1) ON CONFLICT (workspace_id, month) DO UPDATE SET runs = usage.runs + 1 WHERE usage.runs < ?',
-    workspaceId, currentMonth(), plan.runsPerMonth,
+    `WITH u AS (INSERT INTO usage (workspace_id, month, runs) VALUES (?, ?, 1)
+       ON CONFLICT (workspace_id, month) DO UPDATE SET runs = usage.runs + 1 WHERE usage.runs < ? RETURNING runs)
+     ${insertSql} WHERE EXISTS (SELECT 1 FROM u)`,
+    workspaceId, currentMonth(), plan.runsPerMonth, ...insertParams,
   );
-  if (!changes) {
-    throw new LimitError(`Monthly run limit reached (${plan.runsPerMonth.toLocaleString()} on the ${plan.name} plan). Upgrade to continue.`);
-  }
+  if (!changes) throw new LimitError(`Monthly run limit reached (${plan.runsPerMonth.toLocaleString()} on the ${plan.name} plan). Upgrade to continue.`);
+}
+
+/**
+ * Counts k runs of one workspace AND records their execution rows in one statement. All or nothing: when the month's cap
+ * cannot take all k, a LimitError is thrown and nothing is written (the caller then tries the runs one by one).
+ * rows: [{ id, workflowId, name, mode, at }]
+ */
+export async function reserveRunsAndInsert(workspaceId, rows) {
+  const plan = await getPlan(workspaceId);
+  const k = rows.length;
+  const col = (key) => rows.map((r) => r[key]);
+  const { changes } = await run(
+    `WITH u AS (INSERT INTO usage (workspace_id, month, runs) VALUES (?, ?, ?)
+       ON CONFLICT (workspace_id, month) DO UPDATE SET runs = usage.runs + ? WHERE usage.runs + ? <= ? RETURNING runs)
+     INSERT INTO executions (id, workspace_id, workflow_id, workflow_name, status, mode, started_at)
+     SELECT x.id, ?, x.wid, x.name, 'queued', x.mode, x.at
+     FROM unnest(?::text[], ?::text[], ?::text[], ?::text[], ?::text[]) AS x(id, wid, name, mode, at) WHERE EXISTS (SELECT 1 FROM u)`,
+    workspaceId, currentMonth(), k, k, k, plan.runsPerMonth, workspaceId, col('id'), col('workflowId'), col('name'), col('mode'), col('at'),
+  );
+  if (changes !== k) throw new LimitError(`Monthly run limit reached (${plan.runsPerMonth.toLocaleString()} on the ${plan.name} plan). Upgrade to continue.`);
 }
 
 /** Gives back a reservation when the run never started (e.g. the queue refused it). */

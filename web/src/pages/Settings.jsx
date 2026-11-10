@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useSession } from '../App.jsx';
+import { Loading } from '../components/common.jsx';
 
 const Meter = ({ label, value, max }) => (
   <div className="meter-row">
@@ -55,7 +56,7 @@ export default function Settings() {
     try { await api('/workspace/invite', { method: 'POST', body: { email } }); setEmail(''); setMsg({ kind: 'ok', text: 'Member added' }); load(); } catch (err) { setMsg({ kind: 'error', text: err.message }); }
   };
 
-  if (!usage) return <div className="page"><p className="muted">Loading…</p></div>;
+  if (!usage) return <div className="page"><Loading rows={5} /></div>;
   const { plan } = usage;
 
   return (

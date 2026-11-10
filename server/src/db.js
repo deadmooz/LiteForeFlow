@@ -1,15 +1,11 @@
 import crypto from 'node:crypto';
-import path from 'node:path';
 import { config } from './config.js';
+import { fire } from './changes.js';
 
 /*
- * One tiny async interface over two drivers:
- *   - SQLite (node:sqlite) for zero-setup local use / single process
- *   - Postgres (pg) when DATABASE_URL is set — required to run more than one process
- * SQL is written once with `?` placeholders and the portable subset both engines understand.
+ * One tiny async interface over Postgres (pg). The Docker edition has no other database.
+ * SQL is written once with `?` placeholders; they are turned into $1, $2 ... before a query is sent.
  */
-
-export const dialect = config.databaseUrl ? 'postgres' : 'sqlite';
 
 const MIGRATIONS = [
   {
@@ -61,54 +57,35 @@ CREATE TABLE IF NOT EXISTS schedules (
 );
 CREATE INDEX IF NOT EXISTS idx_schedules_wf ON schedules(workflow_id);`,
   },
+  {
+    id: 4,
+    sql: `
+CREATE TABLE IF NOT EXISTS alert_state (
+  workflow_id TEXT PRIMARY KEY REFERENCES workflows(id) ON DELETE CASCADE,
+  last_sent TEXT NOT NULL, suppressed INTEGER NOT NULL DEFAULT 0, last_error TEXT
+);`,
+  },
+  // The hourly sweep looks only at runs that are still queued/running: a tiny index instead of a scan of every stored run.
+  { id: 5, sql: "CREATE INDEX IF NOT EXISTS idx_exec_active ON executions(started_at) WHERE status IN ('queued','running')" },
+  // Tells every process (through LISTEN/NOTIFY) when a workflow or webhook changed, so they can keep small caches; and tunes the
+  // executions table for the write-heavy life it has: room on each page for in-place updates, and earlier vacuuming.
+  { id: 6, raw: [
+    "CREATE OR REPLACE FUNCTION ff_notify_change() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_notify('ff_wf', ''); RETURN NULL; END $$",
+    'DROP TRIGGER IF EXISTS ff_wf_change ON workflows',
+    'CREATE TRIGGER ff_wf_change AFTER INSERT OR DELETE OR UPDATE OF definition, settings, static_data, active, name ON workflows FOR EACH STATEMENT EXECUTE FUNCTION ff_notify_change()',
+    'DROP TRIGGER IF EXISTS ff_hook_change ON webhooks',
+    'CREATE TRIGGER ff_hook_change AFTER INSERT OR DELETE OR UPDATE ON webhooks FOR EACH STATEMENT EXECUTE FUNCTION ff_notify_change()',
+    'ALTER TABLE executions SET (fillfactor = 85, autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_scale_factor = 0.05)',
+  ] },
 ];
 
 const splitStatements = (sql) => sql.split(/;\s*(?:\n|$)/).map((s) => s.trim()).filter(Boolean);
 
-/* ------------------------------------ SQLite ---------------------------------- */
-async function createSqlite() {
-  const { DatabaseSync } = await import('node:sqlite');
-  const db = new DatabaseSync(config.dbPath || path.join(config.dataDir, 'liteforeflow.db'));
-  // WAL + synchronous=NORMAL: far fewer fsyncs; a power loss can drop the last commits but never corrupts the file.
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA journal_size_limit = 8388608; PRAGMA cache_size = -4096;');
-  const bind = (p) => p.map((v) => (v === undefined ? null : v));
-  // Preparing a statement costs more than running it, and the app asks the same few questions over and over: keep them.
-  const prepared = new Map();
-  const prep = (sql) => {
-    let st = prepared.get(sql);
-    if (!st) {
-      if (prepared.size >= 300) prepared.clear(); // statements with one-off text (very long IN lists ...) must not pile up
-      st = db.prepare(sql);
-      prepared.set(sql, st);
-    }
-    return st;
-  };
-  const q = {
-    all: async (sql, ...p) => prep(sql).all(...bind(p)),
-    get: async (sql, ...p) => prep(sql).get(...bind(p)),
-    run: async (sql, ...p) => ({ changes: Number(prep(sql).run(...bind(p)).changes) }),
-  };
-  let chain = Promise.resolve(); // one transaction at a time on the single connection
-  return {
-    ...q,
-    exec: async (sql) => { for (const st of splitStatements(sql)) db.exec(st); },
-    transaction: (fn) => {
-      const result = chain.then(async () => {
-        db.exec('BEGIN IMMEDIATE');
-        try { const out = await fn(q); db.exec('COMMIT'); return out; } catch (e) { db.exec('ROLLBACK'); throw e; }
-      });
-      chain = result.catch(() => {});
-      return result;
-    },
-    close: async () => { prepared.clear(); db.close(); },
-  };
-}
-
 /* ----------------------------------- Postgres --------------------------------- */
 async function createPostgres() {
-  let pg;
-  try { pg = (await import('pg')).default; } catch { throw new Error('Postgres support is not installed. Run:  npm run scale-up'); }
-  pg.types.setTypeParser(20, (v) => parseInt(v, 10)); // COUNT(*) etc. come back as numbers, like SQLite
+  if (!config.databaseUrl) throw new Error('DATABASE_URL is not set. The Docker edition needs Postgres: start it with  docker compose up -d --build');
+  const pg = (await import('pg')).default;
+  pg.types.setTypeParser(20, (v) => parseInt(v, 10)); // COUNT(*) etc. come back as numbers,
   const toPg = (sql) => { let i = 0; return sql.replace(/\?/g, () => { i += 1; return `$${i}`; }); };
   // Postgres cannot store a NUL character in text and answers with an internal error; tell the caller what is wrong instead.
   const bind = (p) => p.map((v) => {
@@ -143,20 +120,28 @@ async function createPostgres() {
     throw new Error(`Postgres database encoding is ${enc}; LiteForeFlow requires UTF8 (create it with: CREATE DATABASE liteforeflow ENCODING 'UTF8' TEMPLATE template0)`);
   }
 
-  const make = (client) => ({
+  // A write to workflows/webhooks makes the in-process caches forget (changes.js); other processes hear it from the triggers.
+  const touchesWorkflows = (sql) => /^\s*(INSERT|UPDATE|DELETE)\b/i.test(sql) && /\b(workflows|webhooks)\b/i.test(sql);
+  const make = (client, onWrite) => ({
     all: async (sql, ...p) => (await client.query(toPg(sql), bind(p))).rows,
     get: async (sql, ...p) => (await client.query(toPg(sql), bind(p))).rows[0],
-    run: async (sql, ...p) => ({ changes: (await client.query(toPg(sql), bind(p))).rowCount }),
+    run: async (sql, ...p) => {
+      const res = await client.query(toPg(sql), bind(p));
+      if (touchesWorkflows(sql)) onWrite();
+      return { changes: res.rowCount };
+    },
   });
   return {
-    ...make(pool),
+    ...make(pool, fire),
     exec: async (sql) => { for (const st of splitStatements(sql)) await pool.query(st); },
     transaction: async (fn) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const out = await fn(make(client));
+        let touched = false;
+        const out = await fn(make(client, () => { touched = true; }));
         await client.query('COMMIT');
+        if (touched) fire(); // after the commit: a cache refilled before it would hold the old data
         return out;
       } catch (e) {
         await client.query('ROLLBACK').catch(() => {});
@@ -168,22 +153,21 @@ async function createPostgres() {
   };
 }
 
-const driver = dialect === 'postgres' ? await createPostgres() : await createSqlite();
+const driver = await createPostgres();
 
 async function migrate() {
   await driver.exec('CREATE TABLE IF NOT EXISTS migrations (id INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
   for (const m of MIGRATIONS) {
     if (await driver.get('SELECT id FROM migrations WHERE id = ?', m.id)) continue;
     await driver.transaction(async (tx) => {
-      for (const st of splitStatements(m.sql)) await tx.run(st);
+      for (const st of m.raw ?? splitStatements(m.sql)) await tx.run(st);
       await tx.run('INSERT INTO migrations (id, applied_at) VALUES (?, ?)', m.id, new Date().toISOString());
     });
   }
 }
 
-/** Serialises boot-time migrations across processes (Postgres advisory lock; SQLite is single-process). */
+/** Serialises boot-time migrations across processes (Postgres advisory lock). */
 async function withMigrationLock(fn) {
-  if (dialect !== 'postgres') return fn();
   const client = await driver.pool.connect();
   try {
     await client.query('SELECT pg_advisory_lock(727274)');

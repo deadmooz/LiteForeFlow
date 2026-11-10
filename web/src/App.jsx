@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, lazy, Suspense } from 'react';
-import { Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom';
-import { api, auth, setUnauthorizedHandler } from './api.js';
+import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { api, auth, firstName, initials, setUnauthorizedHandler } from './api.js';
+import { ErrorState, Loading } from './components/common.jsx';
+import { applyTheme, getTheme, useStoredFlag } from './hooks.js';
 import Login from './pages/Login.jsx';
 import Workflows from './pages/Workflows.jsx';
 // The editor (with its canvas library) is the heavy part: it is only fetched when a workflow is opened.
@@ -57,20 +59,50 @@ export default function App() {
   );
 }
 
+/** A crash inside one page shows a message and a retry, not a blank screen; moving to another page resets it. */
+class Boundary extends React.Component {
+  state = { err: null };
+  static getDerivedStateFromError(err) { return { err }; }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return <div className="page"><ErrorState message={`This page hit an unexpected problem: ${this.state.err.message}`} onRetry={() => this.setState({ err: null })} /></div>;
+  }
+}
+
+const THEMES = ['auto', 'light', 'dark'];
+function ThemeToggle() {
+  const [theme, setTheme] = useState(getTheme);
+  const pick = (t) => { applyTheme(t); setTheme(t); };
+  return (
+    <div className="theme-seg" role="group" aria-label="Theme">
+      {THEMES.map((t) => <button key={t} aria-pressed={theme === t} onClick={() => pick(t)}>{t[0].toUpperCase() + t.slice(1)}</button>)}
+    </div>
+  );
+}
+
 function Shell() {
   const { me, logout } = useSession();
+  const { pathname } = useLocation();
   const switchWorkspace = (id) => { auth.workspace = id; window.location.assign('/'); };
+  const [navHidden, toggleNav] = useStoredFlag('ff_hide_nav');
+  const editing = pathname.startsWith('/workflows/') && pathname.length > '/workflows/'.length; // building or editing an automation: the canvas gets the whole window (the editor has its own back button)
   return (
     <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">⚡ LiteForeFlow</div>
+      {!editing && navHidden && (
+        <div className="sidebar-rail"><button className="icon" onClick={toggleNav} aria-label="Show the menu" title="Show the menu">☰</button></div>
+      )}
+      {!editing && !navHidden && <aside className="sidebar">
+        <div className="brand-row">
+          <div className="brand">⚡ LiteForeFlow</div>
+          <button className="icon" onClick={toggleNav} aria-label="Hide the menu" title="Hide the menu">«</button>
+        </div>
         <nav>
           <NavLink to="/" end>Workflows</NavLink>
           <NavLink to="/templates">Templates</NavLink>
           <NavLink to="/executions">Executions</NavLink>
           <NavLink to="/credentials">Credentials</NavLink>
           <NavLink to="/plugins">Plugins</NavLink>
-          <NavLink to="/settings">Usage &amp; plan</NavLink>
+          <NavLink to="/settings" title="Usage and plan">Plan</NavLink>
         </nav>
         <div className="sidebar-foot">
           {me.workspaces.length > 1 && (
@@ -78,12 +110,17 @@ function Shell() {
               {me.workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
           )}
-          <div className="muted small">{me.user.email}</div>
+          <div className="who">
+            <span className="avatar" aria-hidden="true">{initials(me.user)}</span>
+            <div><b>{me.user.name || firstName(me.user)}</b><small title={me.user.email}>{me.user.email}</small></div>
+          </div>
+          <ThemeToggle />
           <button className="link" onClick={logout}>Sign out</button>
         </div>
-      </aside>
+      </aside>}
       <main className="content">
-        <Suspense fallback={<div className="center muted">Loading…</div>}>
+        <Boundary key={pathname}>
+        <Suspense fallback={<div className="page"><Loading rows={6} /></div>}>
         <Routes>
           <Route path="/" element={<Workflows />} />
           <Route path="/workflows/:id" element={<Editor />} />
@@ -95,6 +132,7 @@ function Shell() {
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
         </Suspense>
+        </Boundary>
       </main>
     </div>
   );

@@ -1,11 +1,12 @@
 # LiteForeFlow - advanced guide
 
-Everything here is optional. The default `npm start` / `start.bat` setup is a single process with a built-in database
-(SQLite) and an in-process queue, and needs nothing else.
+Everything here is optional. In this Docker edition the app only runs inside its containers (`docker compose up -d --build`);
+starting `node` directly on your computer is refused. Developers can opt out with `LITEFOREFLOW_ALLOW_HOST=1`.
+Set the variables below in `.env` (Compose passes them on) and run `docker compose up -d`.
 
 ## Settings (environment variables)
 
-Set them before starting - Windows PowerShell: `$env:PORT = "4000"`; Mac/Linux: `PORT=4000 ./start.sh`.
+Put them in the `.env` file next to `docker-compose.yml`, for example `PORT=4000`.
 
 | Variable | Default | What it does |
 |---|---|---|
@@ -16,12 +17,12 @@ Set them before starting - Windows PowerShell: `$env:PORT = "4000"`; Mac/Linux: 
 | `BLOCK_PRIVATE_NETWORK` | `false` | `true` stops the HTTP node (and AI agent) reaching `localhost` / internal addresses. Turn on if others use your server |
 | `OLLAMA_HOST` | `localhost:11434` | Where the Ollama local-AI server runs. Still reachable by the AI nodes when `BLOCK_PRIVATE_NETWORK=true`; other internal addresses stay blocked |
 | `ITEM_CONCURRENCY` | `5` | How many items a read-only API block (HTTP Request GET, the REST connector's GET operations) may fetch at the same time (1-20). `1` = strictly one after another, polite to rate-limited services. POST/PUT/DELETE calls never overlap |
+| `ALERT_COOLDOWN_MIN` | `10` | Failure alerts ("Tell me if this fails" in a workflow's settings): at most one message per workflow in this many minutes, so a broken schedule cannot flood you. The next message says how many were held back. `0` turns the limit off |
 | `PLUGINS_DIR` | - | An extra folder to load plugins from (besides `plugins/` and `data/plugins/`). See [PLUGINS.md](PLUGINS.md) |
 | `ENABLE_CODE_NODE` | `true` | `false` removes the Code node |
 | `SAVE_SUCCESS_DATA` | `true` | `false` stores only a one-line record of successful runs (saves disk) |
 | `MAX_CONCURRENCY` | `10` | Runs at the same time |
 | `SANDBOX_MEMORY_MB` | `64` | Memory cap for each code/expression run (strong sandbox only) |
-| `LITEFOREFLOW_SANDBOX` | auto | `vm` forces the basic sandbox (see below) |
 | `STRIPE_*` | - | Only for charging customers; see the source (`server/src/routes/resources.js`) |
 
 ## The code sandbox
@@ -48,8 +49,7 @@ Set `DATABASE_URL=postgres://user:pass@host:5432/dbname` (the database must be U
 Run one or more API processes and any number of workers:
 
 ```bash
-LITEFOREFLOW_ROLE=api npm start
-LITEFOREFLOW_ROLE=worker npm run worker      # as many as you like
+docker compose up -d --scale worker=4      # the API plus as many workers as you like
 ```
 
 The API only queues runs; workers execute them. Schedules are stored in Redis so they fire once however many API processes run.
@@ -92,8 +92,8 @@ Tests for the Postgres/Redis mode need running Postgres and Redis servers and `T
 
 ## Known limits
 
-- Vendor integrations (Slack, Notion, Airtable, Stripe, HubSpot, Telegram, Discord, Google Sheets) call the vendors' documented APIs
+- Vendor integrations (Slack, Notion, Airtable, Stripe, HubSpot, Telegram, Discord) call the vendors' documented APIs
   but were not run against live accounts; email, HTTP, AI, Postgres and webhooks were.
-- No OAuth sign-in flow yet (so no Gmail/Calendar nodes; use SMTP for email and a service account for Sheets).
+- No OAuth sign-in flow yet (so no Gmail/Calendar nodes; use SMTP for email).
 - No loops in the workflow graph (nodes already process every item; use *Split Out* for lists), no file/binary data, no version history.
-- One database writer: SQLite mode supports a single LiteForeFlow process.
+- Postgres is the only database; the API and every worker share it.

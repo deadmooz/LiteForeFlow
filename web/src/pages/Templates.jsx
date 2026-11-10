@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
+import { Loading } from '../components/common.jsx';
 
 export default function Templates() {
   const [list, setList] = useState(null);
@@ -35,7 +36,7 @@ export default function Templates() {
         ))}
       </div>
       {error && <div className="error">{error}</div>}
-      {!list ? <p className="muted">Loading…</p> : (
+      {!list ? <Loading rows={6} cards /> : (
         <div className="grid">
           {shown.map((t) => (
             <div className="card template" key={t.id}>

@@ -33,10 +33,13 @@ const port = Number(env.PORT) || 3000;
 export const config = {
   port,
   publicUrl: (env.PUBLIC_URL || `http://localhost:${port}`).replace(/\/$/, ''),
+  // Failure alerts: at most one per workflow per window, in minutes (0 turns the limit off). The API addresses can be pointed elsewhere for tests.
+  alertCooldownMs: Math.max(0, Number(env.ALERT_COOLDOWN_MIN ?? 10) || 0) * 60_000,
+  slackApiUrl: (env.SLACK_API_URL || 'https://slack.com/api').replace(/\/$/, ''),
+  telegramApiUrl: (env.TELEGRAM_API_URL || 'https://api.telegram.org').replace(/\/$/, ''),
   // Always next to the app (not the current folder), so starting it from anywhere finds the same data.
   dataDir: env.DATA_DIR || fileURLToPath(new URL('../../data', import.meta.url)),
-  dbPath: env.DB_PATH || null,
-  // Set DATABASE_URL for Postgres (required for multi-process); otherwise SQLite in DATA_DIR.
+  // Postgres connection (set by docker-compose).
   databaseUrl: env.DATABASE_URL || '',
   pgSchema: env.PG_SCHEMA || '',
   pgConnectTimeoutMs: Number(env.PG_CONNECT_TIMEOUT_MS) || 5000,

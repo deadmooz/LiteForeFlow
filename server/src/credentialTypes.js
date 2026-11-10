@@ -50,10 +50,6 @@ export const credentialTypes = [
       { name: 'secure', label: 'Use TLS (port 465)', type: 'boolean', required: false },
     ],
   },
-  {
-    id: 'googleServiceAccount', name: 'Google Service Account',
-    fields: [{ name: 'json', label: 'Service account JSON key', type: 'text', required: true }],
-  },
 ];
 
 export const getCredentialType = (id) => credentialTypes.find((t) => t.id === id);
@@ -106,7 +102,7 @@ const TESTS = {
     try {
       r = await httpRequest({ url: `${base}/api/tags`, headers: d.apiKey ? { authorization: `Bearer ${d.apiKey}` } : {}, timeoutMs: 8000, trustedOrigin: config.ollamaUrl });
     } catch (e) {
-      if (e.message === 'fetch failed') throw new Error(`Could not reach Ollama at ${base}. Is it running? Open the Ollama app (or run "ollama serve").`);
+      if (e.unreachable && e.name !== 'TimeoutError') throw new Error(`Could not reach Ollama at ${base}. Is it running? Open the Ollama app (or run "ollama serve").`);
       throw e;
     }
     const names = (r.data?.models ?? []).map((m) => m.name);
@@ -139,12 +135,6 @@ export function validateCredentialData(typeId, data) {
   if (!type) return `Unknown credential type "${typeId}"`;
   for (const f of type.fields) {
     if (f.required && (data[f.name] === undefined || data[f.name] === '')) return `Missing field: ${f.label}`;
-  }
-  if (typeId === 'googleServiceAccount') {
-    try {
-      const k = JSON.parse(data.json);
-      if (!k.client_email || !k.private_key) return 'Service account JSON must contain client_email and private_key';
-    } catch { return 'Service account JSON is not valid JSON'; }
   }
   return null;
 }
