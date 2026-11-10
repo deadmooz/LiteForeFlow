@@ -90,7 +90,8 @@ export function createApp() {
     // Vite fingerprints everything under /assets, so browsers can keep it forever instead of re-downloading.
     app.use('/assets', express.static(path.join(dist, 'assets'), { immutable: true, maxAge: '1y' }));
     app.use(express.static(dist, { maxAge: 0 }));
-    app.get('*', (req, res) => res.sendFile(path.join(dist, 'index.html')));
+    // A page route (/workflows/abc) is the editor's index.html; a missing FILE (/assets/old.js) is a real 404, never HTML a browser would try to run.
+    app.get('*', (req, res) => (path.extname(req.path) ? res.status(404).type('text/plain').send('Not found') : res.sendFile(path.join(dist, 'index.html'))));
   }
 
   // eslint-disable-next-line no-unused-vars

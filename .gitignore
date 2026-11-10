@@ -10,3 +10,25 @@ coverage
 .github/workflows/
 server/test/qa/*-results.json
 QA_REPORT.md
+
+# QA, benchmarks and their data (kept on disk, not in the repository). The unit tests (*.test.*) stay tracked.
+server/test/qa/
+server/test/ui/
+server/test/bench/
+server/test/bench.mjs
+server/test/load.mjs
+server/test/e2e-*.mjs
+docs/QA_*.md
+QA_REPORT.md
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*-results.json
+*.cpuprofile
+prof/
+
+# All tests (unit tests included) stay on disk only
+server/test/
+web/test/
+scripts/test-db.mjs
