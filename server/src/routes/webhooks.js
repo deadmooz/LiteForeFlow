@@ -33,9 +33,12 @@ function sendCustomResponse(res, r) {
 
 webhookRouter.all('/*', async (req, res) => {
   const path = req.params[0].replace(/^\/+|\/+$/g, '');
-  const row = (await get('SELECT * FROM webhooks WHERE path = ? AND method = ?', path, req.method))
-    ?? (await get("SELECT * FROM webhooks WHERE path = ? AND method = 'ANY'", path));
-  const wf = row && parseWorkflow(await get('SELECT * FROM workflows WHERE id = ?', row.workflow_id));
+  // The exact method wins over ANY. The workflow comes in the same query.
+  const row = await get(
+    `SELECT w.*, h.node_id FROM webhooks h JOIN workflows w ON w.id = h.workflow_id
+     WHERE h.path = ? AND h.method IN (?, 'ANY') ORDER BY CASE WHEN h.method = 'ANY' THEN 1 ELSE 0 END LIMIT 1`, path, req.method,
+  );
+  const wf = row && parseWorkflow(row);
   if (!wf?.active) return res.status(404).json({ error: 'Webhook not found or workflow is not active' });
 
   const node = wf.definition.nodes.find((n) => n.id === row.node_id);

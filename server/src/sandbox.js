@@ -1,17 +1,13 @@
-import vm from 'node:vm';
 import { createRequire } from 'node:module';
 
 /*
  * Sandbox for {{ expressions }} and the Code node.
  *
- * STRONG mode (default, package "isolated-vm"): code runs in its own V8 isolate with a memory cap and a wall-clock
- * timeout, executed on a separate thread so the server never freezes. No Node.js globals exist inside.
+ * Code runs in its own V8 isolate ("isolated-vm") with a memory cap and a wall-clock timeout, executed on a separate
+ * thread so the server never freezes. No Node.js globals exist inside. There is no weaker fallback: if isolated-vm cannot be
+ * loaded, the server refuses to start.
  *
- * BASIC mode (automatic fallback when isolated-vm could not be installed, or LITEFOREFLOW_SANDBOX=vm): a locked-down
- * node:vm context (no require/process, no eval, timeouts). Perfectly fine on your own computer; it has no memory cap and
- * runs on the main thread, so do not offer a server in BASIC mode to people you do not trust.
- *
- * Data crosses the boundary only as JSON strings in both modes, so no host object or constructor is reachable.
+ * Data crosses the boundary only as JSON strings, so no host object or constructor is reachable.
  *
  * Speed and memory (measured): creating an isolate costs ~1.9 ms and a context ~0.5 ms, while running a compiled script
  * costs ~0.06 ms. So
@@ -38,29 +34,16 @@ const YIELD_EVERY = 256; // ...and long loops let the rest of the server breathe
 
 let ivmModule;
 const loadIvm = () => {
-  if (ivmModule !== undefined) return ivmModule;
+  if (ivmModule) return ivmModule;
   try {
-    ivmModule = process.env.LITEFOREFLOW_SANDBOX === 'vm' ? null : createRequire(import.meta.url)('isolated-vm');
-  } catch {
-    ivmModule = null;
-  }
-  // Servers that host other people's workflows (the Docker image) refuse to run with the weaker sandbox.
-  if (!ivmModule && process.env.LITEFOREFLOW_REQUIRE_STRONG_SANDBOX === 'true') {
-    throw new Error('The strong code sandbox (isolated-vm) is required here but could not be loaded. '
-      + 'Reinstall with a working build toolchain, or unset LITEFOREFLOW_REQUIRE_STRONG_SANDBOX to accept the basic sandbox.');
+    ivmModule = createRequire(import.meta.url)('isolated-vm');
+  } catch (e) {
+    throw new Error(`The code sandbox (isolated-vm) could not be loaded: ${e.message}. Rebuild the image with a working build toolchain.`);
   }
   return ivmModule;
 };
 
-export const sandboxMode = () => (loadIvm() ? 'isolated-vm' : 'basic');
-
-let warned = false;
-function warnBasic() {
-  if (warned) return;
-  warned = true;
-  console.warn('[liteforeflow] Using the built-in basic code sandbox (the stronger "isolated-vm" is not installed). '
-    + 'This is fine on your own computer. If other people will use this server, run: npm install isolated-vm');
-}
+export const sandboxMode = () => { loadIvm(); return 'isolated-vm'; };
 
 const LOGGING = `
   const logs = [];
@@ -165,7 +148,6 @@ export function drainSandboxPool() {
 export class Sandbox {
   #entry = null;
   #poisoned = false;
-  #basicScripts = new Map();
 
   #isolate() {
     if (!this.#entry || this.#entry.iso.isDisposed) this.#entry = acquireEntry();
@@ -190,10 +172,6 @@ export class Sandbox {
 
   /** Creates a context pre-loaded with `data` (a JSON-serialisable object of globals). One-shot use. */
   context(data) {
-    return loadIvm() ? this.#strongContext(data) : this.#basicContext(data);
-  }
-
-  #strongContext(data) {
     const entry = this.#isolate();
     const iso = entry.iso;
     const ctx = iso.createContextSync();
@@ -217,27 +195,6 @@ export class Sandbox {
     };
   }
 
-  #basicContext(data) {
-    warnBasic();
-    const ctx = vm.createContext(Object.create(null), { codeGeneration: { strings: false, wasm: false } });
-    try {
-      ctx.__raw = JSON.stringify(data);
-      vm.runInContext(BOOTSTRAP, ctx, { timeout: 1000 });
-    } catch (e) {
-      throw toError(e);
-    }
-    return {
-      run: async (source, timeoutMs) => {
-        try {
-          return checkSize(new vm.Script(source).runInContext(ctx, { timeout: timeoutMs }));
-        } catch (e) {
-          throw toError(e);
-        }
-      },
-      release: () => {},
-    };
-  }
-
   /**
    * One context for every evaluation of a node run.
    *   setShared({ nodes, all })   data all items can see; stored once, parsed per item only when used
@@ -245,10 +202,6 @@ export class Sandbox {
    *   run(source, ms)  runs untrusted source that evaluates to a string; compiled once per distinct source
    */
   reusable() {
-    return loadIvm() ? this.#strongReusable() : this.#basicReusable();
-  }
-
-  #strongReusable() {
     const entry = this.#isolate();
     const iso = entry.iso;
     const ctx = iso.createContextSync();
@@ -289,40 +242,9 @@ export class Sandbox {
     };
   }
 
-  #basicReusable() {
-    warnBasic();
-    let calls = 0;
-    const ctx = vm.createContext(Object.create(null), { codeGeneration: { strings: false, wasm: false } });
-    try {
-      vm.runInContext(REUSABLE_BOOTSTRAP, ctx, { timeout: 1000 });
-    } catch (e) {
-      throw toError(e);
-    }
-    const call = (fn, json) => {
-      try { ctx.__raw = json; vm.runInContext(`${fn}(__raw)`, ctx, { timeout: 1000 }); } catch (e) { throw toError(e); }
-    };
-    return {
-      setShared: ({ nodes, all }) => { if (nodes !== undefined) call('__setNodes', JSON.stringify(nodes)); if (all !== undefined) call('__setAll', JSON.stringify(all)); },
-      setItem: (obj) => call('__setItem', JSON.stringify(obj)),
-      run: async (source, timeoutMs) => {
-        try {
-          let s = this.#basicScripts.get(source);
-          if (!s) { if (this.#basicScripts.size >= SCRIPT_CACHE_MAX) this.#basicScripts.clear(); s = new vm.Script(source); this.#basicScripts.set(source, s); }
-          const out = checkSize(s.runInContext(ctx, { timeout: timeoutMs }));
-          if (++calls % YIELD_EVERY === 0) await new Promise((r) => setImmediate(r));
-          return out;
-        } catch (e) {
-          throw toError(e);
-        }
-      },
-      release: () => {},
-    };
-  }
-
   dispose() {
     if (this.#entry) releaseEntry(this.#entry, this.#poisoned);
     this.#entry = null;
     this.#poisoned = false;
-    this.#basicScripts.clear();
   }
 }

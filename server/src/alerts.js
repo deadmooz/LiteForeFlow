@@ -1,6 +1,6 @@
 import { get, run, now } from './db.js';
 import { config } from './config.js';
-import { httpRequest } from './http.js';
+import { slackPost, telegramSend, smtpTransport } from './messaging.js';
 import { loadCredential } from './credentials.js';
 
 /*
@@ -67,25 +67,21 @@ const SLACK_HINTS = {
 /** Sends one message. Throws an Error whose message says what to fix. */
 export async function sendMessage(channel, cred, to, { subject, text }) {
   if (channel === 'slack') {
-    const res = await httpRequest({ method: 'POST', url: `${config.slackApiUrl}/chat.postMessage`, headers: { authorization: `Bearer ${cred.token}` }, body: { channel: to, text }, timeoutMs: 15000 });
-    if (!res.data?.ok) throw new Error((SLACK_HINTS[res.data?.error] ?? (() => `Slack said: ${res.data?.error ?? 'no answer'}`))(to));
+    const data = await slackPost(cred.token, to, text, { timeoutMs: 15000 });
+    if (!data?.ok) throw new Error((SLACK_HINTS[data?.error] ?? (() => `Slack said: ${data?.error ?? 'no answer'}`))(to));
     return;
   }
   if (channel === 'telegram') {
-    const res = await httpRequest({ method: 'POST', url: `${config.telegramApiUrl}/bot${cred.token}/sendMessage`, body: { chat_id: to, text }, timeoutMs: 15000, ignoreStatus: true });
-    if (!res.data?.ok) {
-      const why = String(res.data?.description ?? 'no answer');
+    const data = await telegramSend(cred.token, { chat_id: to, text }, { timeoutMs: 15000, ignoreStatus: true });
+    if (!data?.ok) {
+      const why = String(data?.description ?? 'no answer');
       throw new Error(/chat not found|bot was blocked|have no rights/i.test(why)
         ? `Telegram could not reach that chat (${why}). Send your bot a message first so it is allowed to write to you, then check the chat ID.`
         : `Telegram said: ${why}`);
     }
     return;
   }
-  const nodemailer = (await import('nodemailer')).default;
-  const transport = nodemailer.createTransport({
-    host: cred.host, port: Number(cred.port) || 587, secure: !!cred.secure, auth: cred.user ? { user: cred.user, pass: cred.password } : undefined,
-    connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000,
-  });
+  const transport = await smtpTransport(cred, { connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 20000 });
   try {
     await transport.sendMail({ from: cred.from, to, subject, text });
   } catch (e) {
@@ -111,14 +107,24 @@ export async function testAlert(workspaceId, workflow, alerts) {
  */
 async function claimSlot(workflowId) {
   const t = now();
-  const first = await run('INSERT INTO alert_state (workflow_id, last_sent, suppressed) VALUES (?,?,0) ON CONFLICT (workflow_id) DO NOTHING', workflowId, t);
-  if (first.changes) return { send: true, suppressed: 0 };
-  const row = await get('SELECT suppressed FROM alert_state WHERE workflow_id = ?', workflowId);
   const cutoff = new Date(Date.now() - config.alertCooldownMs).toISOString();
-  const upd = await run('UPDATE alert_state SET last_sent = ?, suppressed = 0 WHERE workflow_id = ? AND last_sent <= ?', t, workflowId, cutoff);
-  if (upd.changes) return { send: true, suppressed: row?.suppressed ?? 0 };
-  await run('UPDATE alert_state SET suppressed = suppressed + 1 WHERE workflow_id = ?', workflowId);
-  return { send: false, suppressed: 0 };
+  // One statement for the usual case (a row exists): lock it, then either start a new cooldown (and report how many were held back)
+  // or count this one as held back. Several processes failing at once are serialised by the row lock.
+  const claim = () => get(
+    `WITH prev AS (SELECT suppressed, last_sent FROM alert_state WHERE workflow_id = ? FOR UPDATE),
+          upd AS (UPDATE alert_state a SET
+                    suppressed = CASE WHEN prev.last_sent <= ? THEN 0 ELSE a.suppressed + 1 END,
+                    last_sent = CASE WHEN prev.last_sent <= ? THEN ? ELSE a.last_sent END
+                  FROM prev WHERE a.workflow_id = ? RETURNING (prev.last_sent <= ?) AS send, prev.suppressed AS was)
+     SELECT send, was FROM upd`, workflowId, cutoff, cutoff, t, workflowId, cutoff,
+  );
+  let row = await claim();
+  if (!row) { // the very first failure of this workflow: it sends
+    const first = await run('INSERT INTO alert_state (workflow_id, last_sent, suppressed) VALUES (?,?,0) ON CONFLICT (workflow_id) DO NOTHING', workflowId, t);
+    if (first.changes) return { send: true, suppressed: 0 };
+    row = await claim(); // another process inserted it a moment ago
+  }
+  return row?.send ? { send: true, suppressed: row.was ?? 0 } : { send: false, suppressed: 0 };
 }
 
 /** Called after an unattended run failed. Never throws into the run: a broken alert is recorded, not propagated. */

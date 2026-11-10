@@ -30,8 +30,7 @@ Put them in `.env` next to `docker-compose.yml` (see `.env.example`). Only `LITE
 | `SAVE_SUCCESS_DATA` | `true` | `false` keeps only a one-line record of successful runs (saves space) |
 | `PLUGINS_DIR` | `/plugins` (= `./plugins-user`) | Folder with your own plugins |
 
-Set automatically by the image: `LITEFOREFLOW_REQUIRE_STRONG_SANDBOX=true` (refuse the weaker code sandbox),
-`DATA_DIR=/data`, and Node memory flags. More tuning (all optional): `MAX_QUEUE_DEPTH`, `QUEUE_ENQUEUE_TIMEOUT_MS`,
+Set automatically by the image: `LITEFOREFLOW_IN_DOCKER=true`, `DATA_DIR=/data`, and Node memory flags. More tuning (all optional): `MAX_QUEUE_DEPTH`, `QUEUE_ENQUEUE_TIMEOUT_MS`,
 `WORKER_LOCK_MS`, `WORKER_STALLED_INTERVAL_MS`, `PG_POOL_SIZE`, `PG_CONNECT_TIMEOUT_MS`, `PG_QUERY_TIMEOUT_MS`, `SANDBOX_MEMORY_MB`.
 
 ## Plugins in Docker

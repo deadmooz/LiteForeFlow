@@ -11,11 +11,11 @@ import { sanitizeAlerts, assertAlertsUsable, testAlert, alertStatus } from '../a
 
 export const workflowsRouter = express.Router();
 
-const summary = (row) => {
-  const def = JSON.parse(row.definition);
-  const triggers = def.nodes.filter((n) => getNodeType(n.type)?.isTrigger).map((n) => n.type);
-  return { id: row.id, name: row.name, active: !!row.active, nodeCount: def.nodes.length, triggers, updatedAt: row.updated_at, createdAt: row.created_at };
-};
+// The list needs only a node count and the trigger types, so Postgres works them out and the (possibly large) definitions stay put.
+const summary = (row) => ({
+  id: row.id, name: row.name, active: !!row.active, nodeCount: row.node_count ?? 0,
+  triggers: (row.types ?? []).filter((t) => getNodeType(t)?.isTrigger), updatedAt: row.updated_at, createdAt: row.created_at,
+});
 
 const MAX_NODES = 200;
 export function checkDefinition(def) {
@@ -51,7 +51,11 @@ const mustFind = async (req) => {
 };
 
 workflowsRouter.get('/', async (req, res) => {
-  res.json((await all('SELECT * FROM workflows WHERE workspace_id = ? ORDER BY updated_at DESC', req.workspaceId)).map(summary));
+  res.json((await all(
+    `SELECT id, name, active, created_at, updated_at, jsonb_array_length(definition::jsonb -> 'nodes') AS node_count,
+       (SELECT json_agg(n ->> 'type') FROM jsonb_array_elements(definition::jsonb -> 'nodes') n) AS types
+     FROM workflows WHERE workspace_id = ? ORDER BY updated_at DESC`, req.workspaceId,
+  )).map(summary));
 });
 
 workflowsRouter.post('/', async (req, res) => {

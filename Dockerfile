@@ -23,8 +23,7 @@ RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev  && rm -f node_module
 FROM node:24-bookworm-slim
 # Small young generation + capped heap keep memory low. The strong code sandbox is mandatory in the Docker edition.
 ENV NODE_ENV=production DATA_DIR=/data LITEFOREFLOW_IN_DOCKER=true \
-    NODE_OPTIONS="--max-semi-space-size=2 --max-old-space-size=192" \
-    LITEFOREFLOW_REQUIRE_STRONG_SANDBOX=true
+    NODE_OPTIONS="--max-semi-space-size=2 --max-old-space-size=192"
 WORKDIR /app
 COPY --from=deps /app/node_modules node_modules
 COPY package.json ./

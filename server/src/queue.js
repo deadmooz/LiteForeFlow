@@ -100,6 +100,9 @@ async function createBullDriver() {
   queue.setMaxListeners(Math.max(100, config.maxQueueDepth));
   let worker = null;
   let events = null;
+  // The queue length is only a safety valve, so it is looked up at most four times a second, not on every call.
+  let depth = 0;
+  let depthAt = 0;
 
   const getEvents = async () => {
     if (!events) {
@@ -117,10 +120,12 @@ async function createBullDriver() {
     async enqueue(payload, { wait, jobId } = {}) {
       // While Redis is unreachable ioredis queues commands forever, so bound the time we are willing to wait and answer 503.
       const { job, ev } = await within(config.queueEnqueueTimeoutMs, 'The execution queue is unavailable (cannot reach Redis); please retry shortly', async () => {
-        const depth = await queue.getWaitingCount();
+        if (Date.now() - depthAt > 250) { depth = await queue.getWaitingCount(); depthAt = Date.now(); }
         if (depth >= config.maxQueueDepth) throw unavailable('The execution queue is full, please retry shortly');
         const events = wait ? await getEvents() : null; // subscribe before adding so the completion event cannot be missed
-        return { ev: events, job: await queue.add(payload.kind, payload, jobId ? { jobId } : undefined) };
+        const added = await queue.add(payload.kind, payload, jobId ? { jobId } : undefined);
+        depth += 1; // between two checks a burst still counts
+        return { ev: events, job: added };
       });
       if (!wait) return undefined;
       return job.waitUntilFinished(ev, WAIT_TIMEOUT_MS);

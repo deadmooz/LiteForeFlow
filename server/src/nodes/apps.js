@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { defineNode, credentialProperty } from './registry.js';
 import { httpRequest, formEncode } from '../http.js';
 import { config } from '../config.js';
+import { slackPost, telegramSend, smtpTransport } from '../messaging.js';
 
 /* Each integration is one declarative object. All of these call vendor REST APIs directly. */
 
@@ -23,12 +24,9 @@ defineNode({
   ],
   async executeItem(ctx, item, i) {
     const { token } = await ctx.credential();
-    const res = await httpRequest({
-      method: 'POST', url: 'https://slack.com/api/chat.postMessage', headers: { authorization: `Bearer ${token}` },
-      body: { channel: (await ctx.param('channel', i)), text: (await ctx.param('text', i)) },
-    });
-    if (!res.data.ok) throw new Error(`Slack error: ${res.data.error}`);
-    return { ok: true, channel: res.data.channel, ts: res.data.ts };
+    const data = await slackPost(token, await ctx.param('channel', i), await ctx.param('text', i));
+    if (!data.ok) throw new Error(`Slack error: ${data.error}`);
+    return { ok: true, channel: data.channel, ts: data.ts };
   },
 });
 
@@ -46,11 +44,8 @@ defineNode({
     const { token } = await ctx.credential();
     const pm = ctx.rawParam('parseMode');
     try {
-      const res = await httpRequest({
-        method: 'POST', url: `https://api.telegram.org/bot${token}/sendMessage`,
-        body: { chat_id: (await ctx.param('chatId', i)), text: (await ctx.param('text', i)), ...(pm ? { parse_mode: pm } : {}) },
-      });
-      return { ok: true, messageId: res.data.result?.message_id };
+      const data = await telegramSend(token, { chat_id: (await ctx.param('chatId', i)), text: (await ctx.param('text', i)), ...(pm ? { parse_mode: pm } : {}) });
+      return { ok: true, messageId: data.result?.message_id };
     } catch (e) { return apiError(e, (d) => d.description && `Telegram error: ${d.description}`); }
   },
 });
@@ -315,11 +310,7 @@ defineNode({
   ],
   async execute(ctx, inputs) {
     const c = await ctx.credential();
-    const nodemailer = (await import('nodemailer')).default;
-    const transport = nodemailer.createTransport({
-      host: c.host, port: Number(c.port) || 587, secure: !!c.secure,
-      auth: c.user ? { user: c.user, pass: c.password } : undefined,
-    });
+    const transport = await smtpTransport(c);
     const out = [];
     for (let i = 0; i < inputs[0].length; i += 1) {
       const info = await transport.sendMail({

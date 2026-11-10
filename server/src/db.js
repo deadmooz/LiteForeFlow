@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS alert_state (
   last_sent TEXT NOT NULL, suppressed INTEGER NOT NULL DEFAULT 0, last_error TEXT
 );`,
   },
+  // The hourly sweep looks only at runs that are still queued/running: a tiny index instead of a scan of every stored run.
+  { id: 5, sql: "CREATE INDEX IF NOT EXISTS idx_exec_active ON executions(started_at) WHERE status IN ('queued','running')" },
 ];
 
 const splitStatements = (sql) => sql.split(/;\s*(?:\n|$)/).map((s) => s.trim()).filter(Boolean);

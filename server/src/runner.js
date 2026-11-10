@@ -1,7 +1,7 @@
 import os from 'node:os';
 import { all, get, run, uid, now } from './db.js';
 import { runWorkflow } from './engine.js';
-import { reserveRun, refundRun, getPlan } from './plans.js';
+import { reserveRunAndInsert, refundRun, plans } from './plans.js';
 import { enqueue } from './queue.js';
 import { config } from './config.js';
 import { pack } from './packing.js';
@@ -60,12 +60,11 @@ function compactResults(results) {
 
 /** Counts the run against the plan and inserts a `queued` execution row. Returns its id. */
 export async function createExecution({ workflow, mode }) {
-  if (mode !== 'subworkflow' && mode !== 'error') await reserveRun(workflow.workspaceId);
   const id = uid();
-  await run(
-    'INSERT INTO executions (id, workspace_id, workflow_id, workflow_name, status, mode, started_at) VALUES (?,?,?,?,?,?,?)',
-    id, workflow.workspaceId, workflow.id, workflow.name, 'queued', mode, now(),
-  );
+  const insert = 'INSERT INTO executions (id, workspace_id, workflow_id, workflow_name, status, mode, started_at)';
+  const row = [id, workflow.workspaceId, workflow.id, workflow.name, 'queued', mode, now()];
+  if (mode === 'subworkflow' || mode === 'error') await run(`${insert} VALUES (?,?,?,?,?,?,?)`, ...row);
+  else await reserveRunAndInsert(workflow.workspaceId, `${insert} SELECT ?,?,?,?,?,?,?`, row); // counts the run and records it in one round trip
   return id;
 }
 
@@ -101,7 +100,7 @@ export async function runExecution({ executionId, workflow, mode, triggerNodeId,
   const { json, truncated } = keepData ? compactResults(result.results) : { json: null, truncated: false };
   await run(
     'UPDATE executions SET status = ?, finished_at = ?, data = ?, error = ? WHERE id = ?',
-    result.status, result.finishedAt, json && pack(json), result.error ? JSON.stringify({ ...result.error, truncated }) : null, executionId,
+    result.status, result.finishedAt, json && await pack(json), result.error ? JSON.stringify({ ...result.error, truncated }) : null, executionId,
   );
   // Most workflows never touch static data; only write when it actually changed.
   const staticJson = JSON.stringify(result.staticData ?? {});
@@ -111,10 +110,8 @@ export async function runExecution({ executionId, workflow, mode, triggerNodeId,
 
   if (result.status === 'error' && mode !== 'error' && mode !== 'subworkflow') {
     submitErrorWorkflow(workflow, executionId, result.error).catch((e) => console.error('[error-workflow]', e.message));
-  }
-  // Someone is watching an editor run, so only unattended runs (webhooks, schedules, polling) send an alert.
-  if (result.status === 'error' && mode !== 'error' && mode !== 'subworkflow' && mode !== 'manual') {
-    notifyFailure(workflow, result.error).catch((e) => console.error('[alerts]', e.message));
+    // Someone is watching an editor run, so only unattended runs (webhooks, schedules, polling) send an alert.
+    if (mode !== 'manual') notifyFailure(workflow, result.error).catch((e) => console.error('[alerts]', e.message));
   }
   // A failed run answers with its error only. Its last output is the data that was fed into the failing step (often the whole
   // request body); callers never read it, and the queue would copy it into Redis for every failure.
@@ -186,9 +183,12 @@ export async function testNodeJob({ workflowId, workspaceId, definition, nodeId,
 
 /** Deletes expired logs and fails executions whose worker vanished without reporting back. */
 export async function pruneExecutions() {
-  for (const w of await all('SELECT id FROM workspaces')) {
-    const days = (await getPlan(w.id)).logRetentionDays;
-    await run('DELETE FROM executions WHERE workspace_id = ? AND started_at < ?', w.id, new Date(Date.now() - days * 86_400_000).toISOString());
+  // One statement per plan (not one per workspace): a plan's logs all expire after the same number of days.
+  const others = Object.keys(plans).filter((k) => k !== 'free');
+  for (const [id, plan] of Object.entries(plans)) {
+    const cutoff = new Date(Date.now() - plan.logRetentionDays * 86_400_000).toISOString();
+    const test = id === 'free' ? `w.plan NOT IN (${others.map(() => '?').join(',')})` : 'w.plan = ?'; // unknown plan names count as free
+    await run(`DELETE FROM executions e USING workspaces w WHERE w.id = e.workspace_id AND ${test} AND e.started_at < ?`, ...(id === 'free' ? others : [id]), cutoff);
   }
   await run(
     "UPDATE executions SET status = 'error', finished_at = ?, error = ? WHERE status IN ('queued','running') AND started_at < ?",

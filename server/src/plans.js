@@ -35,19 +35,18 @@ export const getPlan = async (workspaceId) => {
 const currentMonth = () => new Date().toISOString().slice(0, 7);
 
 /**
- * Atomically counts one run, refusing it when the monthly cap is reached.
- * Metered separately from the executions table so log pruning never resets a customer's usage.
+ * Counts one run AND records its execution row in one statement (one round trip instead of two), refusing it when the cap is reached.
+ * `insertSql` is "INSERT INTO ... SELECT ?, ?, ... " without a WHERE: the cap check is added here.
  */
-export async function reserveRun(workspaceId) {
+export async function reserveRunAndInsert(workspaceId, insertSql, insertParams) {
   const plan = await getPlan(workspaceId);
-  // One atomic statement: insert the month's counter or bump it, but only while under the cap.
   const { changes } = await run(
-    'INSERT INTO usage (workspace_id, month, runs) VALUES (?, ?, 1) ON CONFLICT (workspace_id, month) DO UPDATE SET runs = usage.runs + 1 WHERE usage.runs < ?',
-    workspaceId, currentMonth(), plan.runsPerMonth,
+    `WITH u AS (INSERT INTO usage (workspace_id, month, runs) VALUES (?, ?, 1)
+       ON CONFLICT (workspace_id, month) DO UPDATE SET runs = usage.runs + 1 WHERE usage.runs < ? RETURNING runs)
+     ${insertSql} WHERE EXISTS (SELECT 1 FROM u)`,
+    workspaceId, currentMonth(), plan.runsPerMonth, ...insertParams,
   );
-  if (!changes) {
-    throw new LimitError(`Monthly run limit reached (${plan.runsPerMonth.toLocaleString()} on the ${plan.name} plan). Upgrade to continue.`);
-  }
+  if (!changes) throw new LimitError(`Monthly run limit reached (${plan.runsPerMonth.toLocaleString()} on the ${plan.name} plan). Upgrade to continue.`);
 }
 
 /** Gives back a reservation when the run never started (e.g. the queue refused it). */

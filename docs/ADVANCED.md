@@ -23,7 +23,6 @@ Put them in the `.env` file next to `docker-compose.yml`, for example `PORT=4000
 | `SAVE_SUCCESS_DATA` | `true` | `false` stores only a one-line record of successful runs (saves disk) |
 | `MAX_CONCURRENCY` | `10` | Runs at the same time |
 | `SANDBOX_MEMORY_MB` | `64` | Memory cap for each code/expression run (strong sandbox only) |
-| `LITEFOREFLOW_SANDBOX` | auto | `vm` forces the basic sandbox (see below) |
 | `STRIPE_*` | - | Only for charging customers; see the source (`server/src/routes/resources.js`) |
 
 ## The code sandbox

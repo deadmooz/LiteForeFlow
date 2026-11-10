@@ -457,8 +457,7 @@ test('workspace isolation and stripe signature', async () => {
 test('sandbox: memory bombs and host APIs are contained, large item counts stay fast', async () => {
   const token = await newUser();
 
-  // The basic fallback sandbox (LITEFOREFLOW_SANDBOX=vm) has no memory cap by design, so this check only applies to isolated-vm.
-  if (process.env.LITEFOREFLOW_SANDBOX !== 'vm') {
+  {
     const bomb = await createWf(token, 'bomb', [
       node('t', 'trigger.manual', 'Start'),
       node('c', 'data.code', 'Bomb', { mode: 'runOnce', code: 'const a = []; while (true) { a.push(new Array(1e6).fill(7)); }' }),
@@ -500,9 +499,9 @@ test('footprint: logs are compressed, success data can be dropped, static data i
   const token = await newUser();
 
   const sample = JSON.stringify(Array.from({ length: 200 }, (_, i) => ({ id: i, name: `item ${i}`, tags: ['a', 'b', 'c'] })));
-  assert.ok(pack(sample).length < sample.length / 4, 'repetitive JSON compresses well');
-  assert.equal(unpack(pack(sample)), sample);
-  assert.equal(pack('{"small":1}'), '{"small":1}'); // tiny payloads stay plain text
+  assert.ok((await pack(sample)).length < sample.length / 4, 'repetitive JSON compresses well');
+  assert.equal(unpack(await pack(sample)), sample);
+  assert.equal(await pack('{"small":1}'), '{"small":1}'); // tiny payloads stay plain text
 
   const mk = (name, path, settings) => createWf(token, name, [
     node('t', 'trigger.webhook', 'Hook', { path, method: 'POST', respond: 'lastNode' }),
