@@ -22,7 +22,7 @@ if (process.env.TEST_REDIS_URL) {
 
 const { createApp } = await import('../src/app.js');
 const { startWorker, startEvents, closeQueue, queueMode } = await import('../src/queue.js');
-const { closeDb, dialect } = await import('../src/db.js');
+const { closeDb } = await import('../src/db.js');
 const { verifyStripeSignature } = await import('../src/routes/resources.js');
 const { convertN8nWorkflow } = await import('../src/importer.js');
 
@@ -33,7 +33,7 @@ let mockBase;
 const seen = [];
 
 before(async () => {
-  console.log(`# stack under test: db=${dialect} queue=${queueMode}`);
+  console.log(`# stack under test: db=postgres queue=${queueMode}`);
   await startWorker();
   if (queueMode === 'bullmq') await startEvents();
   server = createApp().listen(0);

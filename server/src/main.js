@@ -1,8 +1,7 @@
-import { spawn } from 'node:child_process';
 import { config } from './config.js';
 import { queueMode, startWorker, startEvents, closeQueue } from './queue.js';
 import './jobs.js';
-import { closeDb, dialect, get } from './db.js';
+import { closeDb, get } from './db.js';
 import { createApp } from './app.js';
 import { initScheduler } from './scheduler.js';
 import { failInflightExecutions } from './runner.js';
@@ -10,8 +9,8 @@ import { loadPlugins, watchPlugins } from './plugins.js';
 
 const role = config.role;
 if (!['all', 'api', 'worker'].includes(role)) throw new Error(`LITEFOREFLOW_ROLE must be all, api or worker (got "${role}")`);
-if (role !== 'all' && (queueMode !== 'bullmq' || dialect !== 'postgres')) {
-  throw new Error(`LITEFOREFLOW_ROLE=${role} needs both DATABASE_URL (Postgres) and REDIS_URL — the in-process queue cannot be shared between processes`);
+if (role !== 'all' && queueMode !== 'bullmq') {
+  throw new Error(`LITEFOREFLOW_ROLE=${role} needs REDIS_URL — the in-process queue cannot be shared between processes`);
 }
 
 /** Listens on the wanted port; when the user did not pick one explicitly and it is taken or blocked, quietly tries the next ones. */
@@ -39,12 +38,6 @@ function listen(app) {
   });
 }
 
-function openBrowser(url) {
-  const [cmd, args] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]]
-    : process.platform === 'darwin' ? ['open', [url]] : ['xdg-open', [url]];
-  try { spawn(cmd, args, { detached: true, stdio: 'ignore' }).on('error', () => {}).unref(); } catch { /* the URL is printed anyway */ }
-}
-
 const stops = [];
 let server = null;
 
@@ -65,14 +58,13 @@ try {
       if (firstRun) console.log('    First time? Click "Create an account" on the page - it is free and stays on this computer.');
       console.log('    To stop: press Ctrl+C in this window');
       console.log('');
-      if (process.env.LITEFOREFLOW_OPEN === '1') openBrowser(config.publicUrl);
     } else {
-      console.log(`LiteForeFlow ${role} listening on ${config.publicUrl}  (db: ${dialect}, queue: ${queueMode})`);
+      console.log(`LiteForeFlow ${role} listening on ${config.publicUrl}  (queue: ${queueMode})`);
     }
   }
   if (role !== 'api') {
     await startWorker();
-    if (role === 'worker') console.log(`LiteForeFlow worker started (concurrency ${config.maxConcurrency}, db: ${dialect}, queue: ${queueMode})`);
+    if (role === 'worker') console.log(`LiteForeFlow worker started (concurrency ${config.maxConcurrency}, queue: ${queueMode})`);
   }
 } catch (e) {
   console.error(`\n  LiteForeFlow could not start: ${e.message}\n`);

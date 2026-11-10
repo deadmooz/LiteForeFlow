@@ -6,8 +6,6 @@ import { config } from './config.js';
  * SQL is written once with `?` placeholders; they are turned into $1, $2 ... before a query is sent.
  */
 
-export const dialect = 'postgres';
-
 const MIGRATIONS = [
   {
     id: 1,
@@ -73,8 +71,7 @@ const splitStatements = (sql) => sql.split(/;\s*(?:\n|$)/).map((s) => s.trim()).
 /* ----------------------------------- Postgres --------------------------------- */
 async function createPostgres() {
   if (!config.databaseUrl) throw new Error('DATABASE_URL is not set. The Docker edition needs Postgres: start it with  docker compose up -d --build');
-  let pg;
-  try { pg = (await import('pg')).default; } catch { throw new Error('Postgres support is not installed. Run:  npm run scale-up'); }
+  const pg = (await import('pg')).default;
   pg.types.setTypeParser(20, (v) => parseInt(v, 10)); // COUNT(*) etc. come back as numbers,
   const toPg = (sql) => { let i = 0; return sql.replace(/\?/g, () => { i += 1; return `$${i}`; }); };
   // Postgres cannot store a NUL character in text and answers with an internal error; tell the caller what is wrong instead.

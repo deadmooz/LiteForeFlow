@@ -12,7 +12,6 @@ import { webhookRouter } from './routes/webhooks.js';
 import { pluginsRouter } from './routes/plugins.js';
 import './jobs.js'; // registers the job handler with the queue
 import { queueMode } from './queue.js';
-import { dialect } from './db.js';
 import { sandboxMode } from './sandbox.js';
 
 const STATIC_TYPES = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
@@ -71,7 +70,7 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
   app.use(express.text({ type: ['text/*'], limit: '1mb' }));
 
-  app.get('/api/health', (req, res) => res.json({ ok: true, db: dialect, queue: queueMode, sandbox: sandboxMode() }));
+  app.get('/api/health', (req, res) => res.json({ ok: true, db: 'postgres', queue: queueMode, sandbox: sandboxMode() }));
   app.use('/webhook', webhookRouter);
 
   app.use('/api/auth', authRouter);

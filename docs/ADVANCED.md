@@ -1,7 +1,7 @@
 # LiteForeFlow - advanced guide
 
 Everything here is optional. In this Docker edition the app only runs inside its containers (`docker compose up -d --build`);
-starting `node` / `npm start` directly on your computer is refused. Developers can opt out with `LITEFOREFLOW_ALLOW_HOST=1`.
+starting `node` directly on your computer is refused. Developers can opt out with `LITEFOREFLOW_ALLOW_HOST=1`.
 Set the variables below in `.env` (Compose passes them on) and run `docker compose up -d`.
 
 ## Settings (environment variables)
@@ -50,8 +50,7 @@ Set `DATABASE_URL=postgres://user:pass@host:5432/dbname` (the database must be U
 Run one or more API processes and any number of workers:
 
 ```bash
-LITEFOREFLOW_ROLE=api npm start
-LITEFOREFLOW_ROLE=worker npm run worker      # as many as you like
+docker compose up -d --scale worker=4      # the API plus as many workers as you like
 ```
 
 The API only queues runs; workers execute them. Schedules are stored in Redis so they fire once however many API processes run.

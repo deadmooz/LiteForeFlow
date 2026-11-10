@@ -8,10 +8,7 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "prestart": "node scripts/preflight.cjs",
-    "start": "node --max-semi-space-size=2 --max-old-space-size=192 server/src/index.js",
     "dev": "node --watch server/src/index.js",
-    "worker": "node --max-semi-space-size=2 --max-old-space-size=192 server/src/worker.js",
     "test": "node --test --test-concurrency=1 server/test/api.test.js server/test/schedule.test.mjs server/test/plugins.test.mjs server/test/perf.test.mjs server/test/alerts.test.mjs web/test/flow.test.mjs",
     "qa": "node server/test/qa/qa.mjs",
     "plugin:new": "node scripts/new-plugin.cjs",
