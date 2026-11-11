@@ -55,7 +55,7 @@ export function ConnectionLine({ fromX, fromY, toX, toY, fromPosition, toPositio
     targetPosition: t ? (t.side === 'in' ? Position.Left : Position.Right) : toPosition, borderRadius: 8,
   });
   return (
-    <g className="connect-preview">
+    <g>
       <path d={path} fill="none" className="connect-line" />
       <circle cx={fromX} cy={fromY} r={6} className="connect-dot" />
       <circle cx={ex} cy={ey} r={6} className={t ? 'connect-dot' : 'connect-dot loose'} />

@@ -29,7 +29,6 @@ function cronFromRule(p) {
   if (rule.field === 'minutes') return `*/${rule.minutesInterval || 5} * * * *`;
   if (rule.field === 'hours') return `${rule.triggerAtMinute ?? 0} */${rule.hoursInterval || 1} * * *`;
   if (rule.field === 'days') return `${rule.triggerAtMinute ?? 0} ${rule.triggerAtHour ?? 0} */${rule.daysInterval || 1} * *`;
-  if (rule.field === 'cronExpression') return rule.expression;
   return null;
 }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { DAY_SHORT, DAY_NAMES, WEEK_ORDER, MINUTE_STEPS, HOUR_STEPS, MODES, DEFAULTS, buildCron, parseCron, describe, runsPerDay } from '../schedule.js';
 
 /** "When should this run?" without cron: pick how often, then the details. Writes a cron string via onChange. */

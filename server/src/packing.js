@@ -22,11 +22,10 @@ export function unpack(stored) {
   return zlib.gunzipSync(Buffer.from(stored.slice(PREFIX.length), 'base64')).toString('utf8');
 }
 
-/** Same as parseStored, but decompresses on a thread-pool thread so a big log does not stall the server. */
+/** Parses a stored log, decompressing on a thread-pool thread so a big log does not stall the server. */
 export async function parseStoredAsync(stored) {
   if (!stored) return null;
   if (typeof stored === 'string' && stored.startsWith(PREFIX)) return JSON.parse((await gunzip(Buffer.from(stored.slice(PREFIX.length), 'base64'))).toString('utf8'));
   return JSON.parse(stored);
 }
 
-export const parseStored = (stored) => (stored ? JSON.parse(unpack(stored)) : null);

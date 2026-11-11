@@ -40,7 +40,7 @@ Measured with a CPU profile before changing anything: **64% of the time in a sma
 
 ## What was measured and left alone
 
-- **Node/V8 flags.** Smaller or larger young-generation sizes (`--max-semi-space-size` 1, 2, 4, 8) changed speed by less than 10% and memory by noise, so the launcher's settings stay.
+- **Node/V8 flags.** Smaller or larger young-generation sizes (`--max-semi-space-size` 1, 2, 4, 8) changed speed by less than 10% and memory by noise, so the image's settings stay.
 - **Memory after a big run.** The JavaScript heap shrinks right away, but the operating system keeps freed native pages in the process for a while (a 50,000-item run leaves about +40 MB until the process has been quiet for a few seconds). This is allocator behaviour, not a leak: repeating the run does not grow it.
 - **Start-up** is mostly loading many small files; nothing worth the risk.
 - **Node's built-in `fetch` costs about 13 ms per call on Windows** against any server, including a trivial one. The benchmark therefore uses plain `http` with keep-alive. (Browsers are not affected.)

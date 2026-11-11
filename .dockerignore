@@ -8,8 +8,5 @@ data
 docs
 scripts
 server/test
-start.bat
-start.sh
-run.py
 *.md
 plugins-user
