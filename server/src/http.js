@@ -56,15 +56,24 @@ export function isPrivateIp(ip) {
   return (b[0] & 0xfe) === 0xfc || (b[0] === 0xfe && (b[1] & 0xc0) >= 0x80) || b[0] === 0xff; // unique-local, link/site-local, multicast
 }
 
+const hostVerdicts = new Map(); // host -> { private, exp }: a name is looked up at most every 30 s, not on every call
 async function assertAllowedHost(url, trustedOrigin) {
   if (!config.blockPrivateNetwork) return;
-  if (trustedOrigin && new URL(url).origin === trustedOrigin) return; // an address the server admin chose (e.g. OLLAMA_HOST)
-  const { hostname } = new URL(url);
-  const host = hostname.replace(/^\[|\]$/g, '');
-  const addrs = net.isIP(host) ? [{ address: host }] : await dns.lookup(host, { all: true });
-  if (addrs.some((a) => isPrivateIp(a.address))) {
-    throw new Error('Requests to private or loopback network addresses are blocked on this server');
+  const u = new URL(url);
+  if (trustedOrigin && u.origin === trustedOrigin) return; // an address the server admin chose (e.g. OLLAMA_HOST)
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  let isPrivate;
+  if (net.isIP(host)) isPrivate = isPrivateIp(host);
+  else {
+    const hit = hostVerdicts.get(host);
+    if (hit && hit.exp > Date.now()) isPrivate = hit.private;
+    else {
+      isPrivate = (await dns.lookup(host, { all: true })).some((a) => isPrivateIp(a.address));
+      if (hostVerdicts.size >= 500) hostVerdicts.clear();
+      hostVerdicts.set(host, { private: isPrivate, exp: Date.now() + 30_000 });
+    }
   }
+  if (isPrivate) throw new Error('Requests to private or loopback network addresses are blocked on this server');
 }
 
 const hasHeader = (h, name) => Object.keys(h).some((k) => k.toLowerCase() === name);

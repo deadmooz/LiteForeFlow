@@ -11,7 +11,7 @@ import { convertN8nWorkflow } from '../importer.js';
 import { createWorkflow, checkDefinition } from './workflows.js';
 import { getUsage, plans, invalidatePlan } from '../plans.js';
 import { config } from '../config.js';
-import { parseStored } from '../packing.js';
+import { parseStoredAsync } from '../packing.js';
 import { httpRequest } from '../http.js';
 
 /* ------------------------------- node types ----------------------------------- */
@@ -129,12 +129,12 @@ executionsRouter.get('/', async (req, res) => {
 });
 
 executionsRouter.get('/:id', async (req, res) => {
-  const r = await get('SELECT * FROM executions WHERE id = ? AND workspace_id = ?', req.params.id, req.workspaceId);
+  const r = await get('SELECT id, workflow_id, workflow_name, status, mode, started_at, finished_at, worker, error, data FROM executions WHERE id = ? AND workspace_id = ?', req.params.id, req.workspaceId);
   if (!r) throw new HttpError(404, 'Execution not found');
   res.json({
     id: r.id, workflowId: r.workflow_id, workflowName: r.workflow_name, status: r.status, mode: r.mode,
     startedAt: r.started_at, finishedAt: r.finished_at, worker: r.worker, error: r.error ? JSON.parse(r.error) : null,
-    results: parseStored(r.data) ?? {},
+    results: (await parseStoredAsync(r.data)) ?? {},
   });
 });
 

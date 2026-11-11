@@ -76,13 +76,19 @@ export async function requireAuth(req, res, next) {
     if (!header.startsWith('Bearer ')) throw new HttpError(401, 'Authentication required');
     let payload;
     try { payload = jwt.verify(header.slice(7), jwtSecret); } catch { throw new HttpError(401, 'Session expired, please sign in again'); }
-    const user = await get('SELECT * FROM users WHERE id = ?', payload.sub);
-    if (!user) throw new HttpError(401, 'Account not found');
-    const spaces = await workspacesOf(user.id);
+    // One round trip: the account and its workspaces together (no password hash is read).
+    const rows = await all(
+      'SELECT u.id AS uid, u.email, u.name AS uname, w.id, w.name, w.plan, m.role FROM users u LEFT JOIN members m ON m.user_id = u.id LEFT JOIN workspaces w ON w.id = m.workspace_id WHERE u.id = ? ORDER BY m.created_at',
+      payload.sub,
+    );
+    if (!rows.length) throw new HttpError(401, 'Account not found');
+    const user = { id: rows[0].uid, email: rows[0].email, name: rows[0].uname };
+    const spaces = rows.filter((r) => r.id).map((r) => ({ id: r.id, name: r.name, plan: r.plan, role: r.role }));
     const wanted = req.get('x-workspace-id');
     const ws = spaces.find((w) => w.id === wanted) ?? spaces[0];
     if (!ws) throw new HttpError(403, 'No workspace');
     req.user = user;
+    req.spaces = spaces;
     req.workspaceId = ws.id;
     req.role = ws.role;
     next();
@@ -93,7 +99,7 @@ export const meRouter = express.Router();
 meRouter.use(requireAuth);
 
 meRouter.get('/me', async (req, res) => {
-  res.json({ user: publicUser(req.user), workspaces: await workspacesOf(req.user.id), currentWorkspaceId: req.workspaceId });
+  res.json({ user: publicUser(req.user), workspaces: req.spaces, currentWorkspaceId: req.workspaceId });
 });
 
 meRouter.get('/workspace/members', async (req, res) => {

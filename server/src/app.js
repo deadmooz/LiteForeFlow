@@ -73,6 +73,33 @@ export function createApp() {
   app.get('/api/health', (req, res) => res.json({ ok: true, db: 'postgres', queue: queueMode, sandbox: sandboxMode() }));
   app.use('/webhook', webhookRouter);
 
+  // Large JSON answers (workflow lists, execution logs, the node catalogue) are gzipped on a thread-pool thread.
+  const gzipped = new Map();
+  app.use('/api', (req, res, next) => {
+    if (req.method !== 'GET' || !/gzip/.test(req.get('accept-encoding') ?? '')) return next();
+    const json = res.json.bind(res);
+    res.json = (body) => {
+      const text = JSON.stringify(body);
+      if (text === undefined || text.length < 1024 || res.headersSent) return json(body);
+      const send = (buf) => {
+        if (!res.getHeader('content-type')) res.type('application/json');
+        res.set({ 'content-encoding': 'gzip', vary: 'Accept-Encoding', 'content-length': buf.length });
+        res.end(buf);
+      };
+      const known = gzipped.get(text); // the node and credential catalogues are the same for everyone: compress them once
+      if (known) { send(known); return res; }
+      zlib.gzip(text, { level: 4 }, (err, buf) => {
+        if (err) return res.end(text);
+        if (text.length > 4096 && text.length < 262144) {
+          if (gzipped.size >= 8) gzipped.delete(gzipped.keys().next().value);
+          gzipped.set(text, buf);
+        }
+        send(buf);
+      });
+      return res;
+    };
+    next();
+  });
   app.use('/api/auth', authRouter);
   app.use('/api', meRouter);
   app.use('/api/workflows', requireAuth, workflowsRouter);

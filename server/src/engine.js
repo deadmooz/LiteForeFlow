@@ -45,31 +45,55 @@ export function validateWorkflow(def) {
 }
 
 /** Nodes reachable from `startId`, in topological order. Throws on cycles. */
+// The graph of a cached workflow never changes, so its adjacency lists and run order are worked out once per connections array.
+const graphs = new WeakMap();
+function graphOf(conns) {
+  let g = graphs.get(conns);
+  if (!g) {
+    const out = new Map();
+    const into = new Map();
+    for (const c of conns) {
+      (out.get(c.from) ?? out.set(c.from, []).get(c.from)).push(c);
+      (into.get(c.to) ?? into.set(c.to, []).get(c.to)).push(c);
+    }
+    g = { out, into, orders: new Map() };
+    graphs.set(conns, g);
+  }
+  return g;
+}
+
 export function reachableOrder(nodes, conns, startId) {
   if (!startId) return [];
+  const g = graphOf(conns);
+  const memo = g.orders.get(startId);
+  if (memo) return memo;
   const reachable = new Set([startId]);
-  const queue = [startId];
-  while (queue.length) {
-    const cur = queue.shift();
-    for (const c of conns) if (c.from === cur && !reachable.has(c.to)) { reachable.add(c.to); queue.push(c.to); }
+  const stack = [startId];
+  while (stack.length) {
+    const cur = stack.pop();
+    for (const c of g.out.get(cur) ?? []) if (!reachable.has(c.to)) { reachable.add(c.to); stack.push(c.to); }
   }
-  const indeg = new Map([...reachable].map((id) => [id, 0]));
-  for (const c of conns) if (reachable.has(c.from) && reachable.has(c.to)) indeg.set(c.to, indeg.get(c.to) + 1);
-  const ready = [...reachable].filter((id) => indeg.get(id) === 0);
+  const indeg = new Map();
+  for (const id of reachable) indeg.set(id, 0);
+  for (const id of reachable) for (const c of g.out.get(id) ?? []) if (reachable.has(c.to)) indeg.set(c.to, indeg.get(c.to) + 1);
   const order = [];
-  while (ready.length) {
-    const id = ready.shift();
+  const ready = [];
+  for (const [id, d] of indeg) if (d === 0) ready.push(id);
+  for (let i = 0; i < ready.length; i++) {
+    const id = ready[i];
     order.push(id);
-    for (const c of conns) {
-      if (c.from === id && reachable.has(c.to)) {
-        indeg.set(c.to, indeg.get(c.to) - 1);
-        if (indeg.get(c.to) === 0) ready.push(c.to);
+    for (const c of g.out.get(id) ?? []) {
+      if (reachable.has(c.to)) {
+        const d = indeg.get(c.to) - 1;
+        indeg.set(c.to, d);
+        if (d === 0) ready.push(c.to);
       }
     }
   }
   if (order.length !== reachable.size) {
     throw new Error('Workflow contains a loop. Cycles are not supported yet — nodes already process every item, or use "Split Out" for arrays.');
   }
+  if (g.orders.size < 20) g.orders.set(startId, order);
   return order;
 }
 
@@ -148,9 +172,9 @@ export async function runWorkflow(opts) {
       if (id === startId) {
         inputs[0] = onlyNode ? (onlyInput ?? [{ json: {} }]) : (opts.triggerItems ?? [{ json: {} }]);
       } else {
-        for (const c of conns) {
-          const produced = c.to === id ? outputs[c.from]?.[c.fromOutput ?? 0] : null;
-          if (produced?.length) inputs[c.toInput ?? 0].push(...produced);
+        for (const c of graphOf(conns).into.get(id) ?? []) {
+          const produced = outputs[c.from]?.[c.fromOutput ?? 0];
+          if (produced?.length) { const slot = inputs[c.toInput ?? 0]; for (let k = 0; k < produced.length; k++) slot.push(produced[k]); }
         }
         if (inputs.every((a) => a.length === 0)) {
           results[id] = { status: 'skipped' };

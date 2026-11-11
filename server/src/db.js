@@ -86,7 +86,17 @@ async function createPostgres() {
   if (!config.databaseUrl) throw new Error('DATABASE_URL is not set. The Docker edition needs Postgres: start it with  docker compose up -d --build');
   const pg = (await import('pg')).default;
   pg.types.setTypeParser(20, (v) => parseInt(v, 10)); // COUNT(*) etc. come back as numbers,
-  const toPg = (sql) => { let i = 0; return sql.replace(/\?/g, () => { i += 1; return `$${i}`; }); };
+  // The set of SQL texts is small and fixed, so the `?` -> `$n` rewrite is remembered per text.
+  const pgText = new Map();
+  const toPg = (sql) => {
+    let t = pgText.get(sql);
+    if (t === undefined) {
+      let i = 0;
+      t = sql.replace(/\?/g, () => { i += 1; return `$${i}`; });
+      if (pgText.size < 2000) pgText.set(sql, t);
+    }
+    return t;
+  };
   // Postgres cannot store a NUL character in text and answers with an internal error; tell the caller what is wrong instead.
   const bind = (p) => p.map((v) => {
     if (typeof v === 'string' && v.includes('\u0000')) throw Object.assign(new Error('Text cannot contain the NUL (zero) character'), { status: 400 });
@@ -121,7 +131,15 @@ async function createPostgres() {
   }
 
   // A write to workflows/webhooks makes the in-process caches forget (changes.js); other processes hear it from the triggers.
-  const touchesWorkflows = (sql) => /^\s*(INSERT|UPDATE|DELETE)\b/i.test(sql) && /\b(workflows|webhooks)\b/i.test(sql);
+  const touchCache = new Map();
+  const touchesWorkflows = (sql) => {
+    let v = touchCache.get(sql);
+    if (v === undefined) {
+      v = /^\s*(INSERT|UPDATE|DELETE)\b/i.test(sql) && /\b(workflows|webhooks)\b/i.test(sql);
+      if (touchCache.size < 2000) touchCache.set(sql, v);
+    }
+    return v;
+  };
   const make = (client, onWrite) => ({
     all: async (sql, ...p) => (await client.query(toPg(sql), bind(p))).rows,
     get: async (sql, ...p) => (await client.query(toPg(sql), bind(p))).rows[0],

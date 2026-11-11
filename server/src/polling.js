@@ -49,8 +49,11 @@ export async function handleRssPoll({ workflowId, workspaceId, nodeId }) {
   const seen = new Set(staticData[key] ?? []);
   const isFirstPoll = !staticData[key];
   const fresh = entries.filter((e) => e.guid && !seen.has(e.guid));
-  staticData[key] = [...new Set([...entries.map((e) => e.guid), ...seen])].slice(0, 500);
-  await run('UPDATE workflows SET static_data = ? WHERE id = ?', JSON.stringify(staticData), wf.id);
+  const next = [...new Set([...entries.map((e) => e.guid), ...seen])].slice(0, 500);
+  const changed = JSON.stringify(next) !== JSON.stringify(staticData[key] ?? null);
+  staticData[key] = next;
+  // An unchanged feed writes nothing: a write would make every process forget its cached workflows.
+  if (changed) await run('UPDATE workflows SET static_data = ? WHERE id = ?', JSON.stringify(staticData), wf.id);
   if (isFirstPoll || !fresh.length) return { polled: entries.length, fresh: 0 }; // first poll only records the baseline
 
   try {
