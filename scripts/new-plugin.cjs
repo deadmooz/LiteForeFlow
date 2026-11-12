@@ -1,4 +1,4 @@
-// npm run plugin:new -- my-plugin      creates data/plugins/my-plugin from plugins/_template
+// npm run plugin:new -- my-plugin      creates plugins-user/my-plugin from plugins/_template
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -9,8 +9,7 @@ if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(id)) {
   process.exit(1);
 }
 const root = path.resolve(__dirname, '..');
-const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(root, 'data');
-const dest = path.join(dataDir, 'plugins', id);
+const dest = path.join(root, 'plugins-user', id);
 if (fs.existsSync(dest)) {
   console.error(`\n  ${dest} already exists. Pick another name or delete that folder.\n`);
   process.exit(1);

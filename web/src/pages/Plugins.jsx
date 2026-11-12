@@ -31,7 +31,7 @@ export default function Plugins() {
       </div>
       <p className="muted">
         Plugins add blocks (nodes) and credential types. Some come with LiteForeFlow; you can add your own by dropping a folder into
-        <code> data/plugins</code>.
+        <code> plugins-user</code>.
       </p>
       {error && <div className="error">{error}</div>}
       {!list ? <Loading rows={5} /> : (
@@ -77,8 +77,8 @@ export default function Plugins() {
       <div className="card plugin-howto">
         <h3>Make your own plugin</h3>
         <ol>
-          <li>In the LiteForeFlow folder run: <code>npm run plugin:new -- my-plugin</code>. It creates <code>data/plugins/my-plugin</code> with a working example.</li>
-          <li>Open <code>data/plugins/my-plugin/index.js</code> and change the example block.</li>
+          <li>In the LiteForeFlow folder run: <code>npm run plugin:new -- my-plugin</code>. It creates <code>plugins-user/my-plugin</code> with a working example.</li>
+          <li>Open <code>plugins-user/my-plugin/index.js</code> and change the example block.</li>
           <li>Press <b>Reload</b> above. Your block appears in the editor palette.</li>
         </ol>
         <p className="muted small">
