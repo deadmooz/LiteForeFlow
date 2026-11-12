@@ -15,13 +15,15 @@ export class HttpError extends Error {
 
 /* Tiny in-memory limiter for credential endpoints. Use a shared store behind multiple instances. */
 const attempts = new Map();
+const note = (ip) => attempts.set(ip, [...(attempts.get(ip) ?? []), Date.now()]);
+// Addresses that stopped coming are forgotten, so the map cannot grow for ever.
+setInterval(() => { const t = Date.now(); for (const [ip, ts] of attempts) if (!ts.length || t - ts[ts.length - 1] > 60_000) attempts.delete(ip); }, 60_000).unref();
+/** Sign-up counts every try; sign-in counts only wrong passwords (see the login route), so people behind one office address are not locked out by good logins. */
 function rateLimit(req, res, next) {
-  const key = req.ip;
-  const t = Date.now();
-  const recent = (attempts.get(key) ?? []).filter((x) => t - x < 60_000);
+  const recent = (attempts.get(req.ip) ?? []).filter((x) => Date.now() - x < 60_000);
+  attempts.set(req.ip, recent);
   if (recent.length >= config.authRateLimitPerMin) return next(new HttpError(429, 'Too many attempts, try again in a minute'));
-  recent.push(t);
-  attempts.set(key, recent);
+  if (!req.path.endsWith('/login')) note(req.ip);
   return next();
 }
 
@@ -66,7 +68,7 @@ authRouter.post('/login', rateLimit, async (req, res) => {
   const user = await get('SELECT * FROM users WHERE email = ?', String(email ?? '').trim().toLowerCase());
   // Compare even when the user is missing so response time does not reveal which emails exist.
   const ok = await bcrypt.compare(String(password ?? ''), user?.password_hash ?? '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinva');
-  if (!user || !ok) throw new HttpError(401, 'Invalid email or password');
+  if (!user || !ok) { note(req.ip); throw new HttpError(401, 'Invalid email or password'); }
   res.json({ token: sign(user.id), user: publicUser(user), workspaces: await workspacesOf(user.id) });
 });
 
@@ -76,13 +78,19 @@ export async function requireAuth(req, res, next) {
     if (!header.startsWith('Bearer ')) throw new HttpError(401, 'Authentication required');
     let payload;
     try { payload = jwt.verify(header.slice(7), jwtSecret); } catch { throw new HttpError(401, 'Session expired, please sign in again'); }
-    const user = await get('SELECT * FROM users WHERE id = ?', payload.sub);
-    if (!user) throw new HttpError(401, 'Account not found');
-    const spaces = await workspacesOf(user.id);
+    // One round trip: the account and its workspaces together (no password hash is read).
+    const rows = await all(
+      'SELECT u.id AS uid, u.email, u.name AS uname, w.id, w.name, w.plan, m.role FROM users u LEFT JOIN members m ON m.user_id = u.id LEFT JOIN workspaces w ON w.id = m.workspace_id WHERE u.id = ? ORDER BY m.created_at',
+      payload.sub,
+    );
+    if (!rows.length) throw new HttpError(401, 'Account not found');
+    const user = { id: rows[0].uid, email: rows[0].email, name: rows[0].uname };
+    const spaces = rows.filter((r) => r.id).map((r) => ({ id: r.id, name: r.name, plan: r.plan, role: r.role }));
     const wanted = req.get('x-workspace-id');
     const ws = spaces.find((w) => w.id === wanted) ?? spaces[0];
     if (!ws) throw new HttpError(403, 'No workspace');
     req.user = user;
+    req.spaces = spaces;
     req.workspaceId = ws.id;
     req.role = ws.role;
     next();
@@ -93,7 +101,7 @@ export const meRouter = express.Router();
 meRouter.use(requireAuth);
 
 meRouter.get('/me', async (req, res) => {
-  res.json({ user: publicUser(req.user), workspaces: await workspacesOf(req.user.id), currentWorkspaceId: req.workspaceId });
+  res.json({ user: publicUser(req.user), workspaces: req.spaces, currentWorkspaceId: req.workspaceId });
 });
 
 meRouter.get('/workspace/members', async (req, res) => {

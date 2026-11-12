@@ -1,4 +1,5 @@
-import dns from 'node:dns/promises';
+import dns from 'node:dns';
+import { Agent } from 'undici';
 import net from 'node:net';
 import { config } from './config.js';
 
@@ -56,16 +57,19 @@ export function isPrivateIp(ip) {
   return (b[0] & 0xfe) === 0xfc || (b[0] === 0xfe && (b[1] & 0xc0) >= 0x80) || b[0] === 0xff; // unique-local, link/site-local, multicast
 }
 
-async function assertAllowedHost(url, trustedOrigin) {
-  if (!config.blockPrivateNetwork) return;
-  if (trustedOrigin && new URL(url).origin === trustedOrigin) return; // an address the server admin chose (e.g. OLLAMA_HOST)
-  const { hostname } = new URL(url);
-  const host = hostname.replace(/^\[|\]$/g, '');
-  const addrs = net.isIP(host) ? [{ address: host }] : await dns.lookup(host, { all: true });
-  if (addrs.some((a) => isPrivateIp(a.address))) {
-    throw new Error('Requests to private or loopback network addresses are blocked on this server');
-  }
-}
+const BLOCKED = 'Requests to private or loopback network addresses are blocked on this server';
+
+// The address is checked at the moment of connecting, so a name that answers "public" to a pre-check and "internal" to the
+// real connection (DNS rebinding) cannot get through. Literal IPs skip the lookup, so they are checked up front.
+const guarded = new Agent({
+  connect: {
+    lookup: (host, opts, cb) => dns.lookup(host, opts, (err, res, fam) => {
+      if (err) return cb(err);
+      const list = Array.isArray(res) ? res : [{ address: res }];
+      return list.some((x) => isPrivateIp(x.address)) ? cb(Object.assign(new Error(BLOCKED), { code: 'EBLOCKED' })) : cb(null, res, fam);
+    }),
+  },
+});
 
 const hasHeader = (h, name) => Object.keys(h).some((k) => k.toLowerCase() === name);
 const truncate = (s, n) => (s.length > n ? `${s.slice(0, n)}…` : s);
@@ -102,7 +106,7 @@ async function readLimited(res, host) {
 
 const NET_REASONS = {
   ENOTFOUND: 'no server has that name - check the address', EAI_AGAIN: 'the name could not be looked up - check your internet connection',
-  ECONNREFUSED: 'the connection was refused - is the service running on that port?', ECONNRESET: 'the connection was dropped',
+  EBLOCKED: 'private or loopback network addresses are blocked on this server', ECONNREFUSED: 'the connection was refused - is the service running on that port?', ECONNRESET: 'the connection was dropped',
   ETIMEDOUT: 'the connection timed out', EHOSTUNREACH: 'the host cannot be reached', ENETUNREACH: 'the network cannot be reached',
   CERT_HAS_EXPIRED: 'its security certificate has expired', DEPTH_ZERO_SELF_SIGNED_CERT: 'it uses a self-signed certificate',
   UNABLE_TO_VERIFY_LEAF_SIGNATURE: 'its security certificate cannot be verified', ERR_TLS_CERT_ALTNAME_INVALID: 'its security certificate is for another name',
@@ -131,7 +135,9 @@ export async function httpRequest({
   try { u = new URL(url); } catch { throw new Error(`Invalid URL: ${url}`); }
   if (!['http:', 'https:'].includes(u.protocol)) throw new Error('Only http(s) URLs are supported');
   for (const [k, v] of Object.entries(query ?? {})) if (v !== undefined && v !== null) u.searchParams.set(k, String(v));
-  await assertAllowedHost(u.toString(), trustedOrigin);
+  const guard = config.blockPrivateNetwork && !(trustedOrigin && u.origin === trustedOrigin); // an address the server admin chose (e.g. OLLAMA_HOST) is exempt
+  const literal = u.hostname.replace(/^\[|\]$/g, '');
+  if (guard && net.isIP(literal) && isPrivateIp(literal)) throw new Error(BLOCKED);
 
   const h = { ...headers };
   let payload;
@@ -154,6 +160,7 @@ export async function httpRequest({
       method, headers: h, body: payload,
       signal: signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), signal]) : AbortSignal.timeout(timeoutMs),
       redirect: config.blockPrivateNetwork ? 'manual' : 'follow',
+      dispatcher: guard ? guarded : undefined,
     });
   } catch (e) {
     throw networkError(e, u.host, timeoutMs);
@@ -175,4 +182,16 @@ export async function httpRequest({
     throw err;
   }
   return out;
+}
+
+/** The model names an Ollama server has ("ollama list"). Says plainly when the server cannot be reached. */
+export async function ollamaModels(cred, timeoutMs = 8000) {
+  const origin = (cred.baseUrl || config.ollamaUrl).replace(/\/$/, '');
+  try {
+    const r = await httpRequest({ url: `${origin}/api/tags`, headers: cred.apiKey ? { authorization: `Bearer ${cred.apiKey}` } : {}, timeoutMs, trustedOrigin: config.ollamaUrl });
+    return (r.data?.models ?? []).map((m) => m.name);
+  } catch (e) {
+    if (e.unreachable && e.name !== 'TimeoutError') throw new Error(`Could not reach Ollama at ${origin}. Is it running? Open the Ollama app (or run "ollama serve").`);
+    throw e;
+  }
 }

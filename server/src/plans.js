@@ -5,7 +5,7 @@ import { get, run } from './db.js';
  * The runsPerMonth caps are a fair-use guardrail, not the billing unit. Tune after beta data.
  */
 export const plans = {
-  free: { id: 'free', name: 'Free', priceUsd: 0, activeWorkflows: 5, runsPerMonth: 1000, logRetentionDays: 3, members: 1 },
+  free: { id: 'free', name: 'Free', priceUsd: 0, activeWorkflows: 50, runsPerMonth: 10_000, logRetentionDays: 7, members: 1 },
   pro: { id: 'pro', name: 'Pro', priceUsd: 12, activeWorkflows: 100, runsPerMonth: 100_000, logRetentionDays: 14, members: 1 },
   team: { id: 'team', name: 'Team', priceUsd: 39, activeWorkflows: 1000, runsPerMonth: 1_000_000, logRetentionDays: 30, members: 10 },
 };

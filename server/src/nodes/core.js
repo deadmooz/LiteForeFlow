@@ -1,4 +1,4 @@
-import { defineNode, credentialProperty } from './registry.js';
+import { defineNode } from './registry.js';
 import { httpRequest } from '../http.js';
 import { runCode, testRegex, createItemCodeRunner } from '../expressions.js';
 import { config } from '../config.js';
@@ -124,7 +124,6 @@ const OPS = {
   isTrue: (a) => a === true || a === 'true',
   isFalse: (a) => a === false || a === 'false',
 };
-export const conditionOperators = Object.keys(OPS);
 
 export async function checkConditions(conds, combine, sandbox) {
   const list = Array.isArray(conds) ? conds : [];
@@ -337,4 +336,3 @@ defineNode({
   execute: (ctx, inputs) => [inputs[0].slice(0, Math.max(0, Number(ctx.rawParam('max')) || 0))],
 });
 
-export { credentialProperty };

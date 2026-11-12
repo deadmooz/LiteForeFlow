@@ -11,7 +11,7 @@ import { convertN8nWorkflow } from '../importer.js';
 import { createWorkflow, checkDefinition } from './workflows.js';
 import { getUsage, plans, invalidatePlan } from '../plans.js';
 import { config } from '../config.js';
-import { parseStored } from '../packing.js';
+import { parseStoredAsync } from '../packing.js';
 import { httpRequest } from '../http.js';
 
 /* ------------------------------- node types ----------------------------------- */
@@ -51,6 +51,11 @@ const isSecret = (typeId, field) => {
   return type ? type.fields.find((f) => f.name === field)?.type === 'password' : true;
 };
 
+/** The stored credential of this workspace, or a 404. */
+const credRow = async (req, id) => (await get('SELECT * FROM credentials WHERE id = ? AND workspace_id = ?', id, req.workspaceId)) ?? Promise.reject(new HttpError(404, 'Credential not found'));
+/** Blank secret fields mean "keep the stored value". */
+const sent = (type, data) => Object.fromEntries(Object.entries(data ?? {}).filter(([k, v]) => !(isSecret(type, k) && v === '')));
+
 credentialsRouter.get('/', async (req, res) => {
   res.json(await all('SELECT id, name, type, created_at AS "createdAt" FROM credentials WHERE workspace_id = ? ORDER BY name', req.workspaceId));
 });
@@ -61,11 +66,9 @@ credentialsRouter.post('/test', async (req, res) => {
   let useType = type;
   let useData = data;
   if (id) {
-    const row = await get('SELECT * FROM credentials WHERE id = ? AND workspace_id = ?', id, req.workspaceId);
-    if (!row) throw new HttpError(404, 'Credential not found');
+    const row = await credRow(req, id);
     useType = row.type;
-    const incoming = Object.fromEntries(Object.entries(data).filter(([k, v]) => !(isSecret(row.type, k) && v === '')));
-    useData = { ...decryptJson(row.data), ...incoming };
+    useData = { ...decryptJson(row.data), ...sent(row.type, data) };
   }
   if (!useType) throw new HttpError(400, 'type is required');
   res.json(await testCredential(useType, useData));
@@ -73,8 +76,7 @@ credentialsRouter.post('/test', async (req, res) => {
 
 /** Never returns secret values — only which secret fields are set. */
 credentialsRouter.get('/:id', async (req, res) => {
-  const row = await get('SELECT * FROM credentials WHERE id = ? AND workspace_id = ?', req.params.id, req.workspaceId);
-  if (!row) throw new HttpError(404, 'Credential not found');
+  const row = await credRow(req, req.params.id);
   const data = decryptJson(row.data);
   const visible = Object.fromEntries(Object.entries(data).filter(([k]) => !isSecret(row.type, k)));
   res.json({ id: row.id, name: row.name, type: row.type, data: visible, secretsSet: Object.keys(data).filter((k) => isSecret(row.type, k) && data[k]) });
@@ -91,12 +93,8 @@ credentialsRouter.post('/', async (req, res) => {
 });
 
 credentialsRouter.put('/:id', async (req, res) => {
-  const row = await get('SELECT * FROM credentials WHERE id = ? AND workspace_id = ?', req.params.id, req.workspaceId);
-  if (!row) throw new HttpError(404, 'Credential not found');
-  const existing = decryptJson(row.data);
-  // Blank secret fields mean "keep the stored value".
-  const incoming = Object.fromEntries(Object.entries(req.body?.data ?? {}).filter(([k, v]) => !(isSecret(row.type, k) && v === '')));
-  const merged = { ...existing, ...incoming };
+  const row = await credRow(req, req.params.id);
+  const merged = { ...decryptJson(row.data), ...sent(row.type, req.body?.data) };
   const err = validateCredentialData(row.type, merged);
   if (err) throw new HttpError(400, err);
   await run('UPDATE credentials SET name = ?, data = ? WHERE id = ?', req.body?.name ? String(req.body.name).slice(0, 80) : row.name, encryptJson(merged), row.id);
@@ -129,12 +127,12 @@ executionsRouter.get('/', async (req, res) => {
 });
 
 executionsRouter.get('/:id', async (req, res) => {
-  const r = await get('SELECT * FROM executions WHERE id = ? AND workspace_id = ?', req.params.id, req.workspaceId);
+  const r = await get('SELECT id, workflow_id, workflow_name, status, mode, started_at, finished_at, worker, error, data FROM executions WHERE id = ? AND workspace_id = ?', req.params.id, req.workspaceId);
   if (!r) throw new HttpError(404, 'Execution not found');
   res.json({
     id: r.id, workflowId: r.workflow_id, workflowName: r.workflow_name, status: r.status, mode: r.mode,
     startedAt: r.started_at, finishedAt: r.finished_at, worker: r.worker, error: r.error ? JSON.parse(r.error) : null,
-    results: parseStored(r.data) ?? {},
+    results: (await parseStoredAsync(r.data)) ?? {},
   });
 });
 

@@ -1,5 +1,5 @@
 import { defineNode, credentialProperty } from './registry.js';
-import { httpRequest, formEncode } from '../http.js';
+import { httpRequest } from '../http.js';
 import { config } from '../config.js';
 import { slackPost, telegramSend, smtpTransport } from '../messaging.js';
 

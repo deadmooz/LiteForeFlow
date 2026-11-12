@@ -11,7 +11,6 @@
  */
 export function createBatcher(flushFn, { maxItems = 100, maxBytes = 4_000_000, maxInflight = 2, sizeOf = () => 0 } = {}) {
   let pending = [];
-  let bytes = 0;
   let inflight = 0;
   let scheduled = false;
 
@@ -25,7 +24,6 @@ export function createBatcher(flushFn, { maxItems = 100, maxBytes = 4_000_000, m
         size += item.size;
         batch.push(item);
       }
-      bytes -= size;
       inflight += 1;
       Promise.resolve().then(() => flushFn(batch.map((b) => b.value))).then(
         (results) => batch.forEach((b, i) => b.resolve(results?.[i])),
@@ -39,10 +37,8 @@ export function createBatcher(flushFn, { maxItems = 100, maxBytes = 4_000_000, m
       return new Promise((resolve, reject) => {
         const size = sizeOf(value);
         pending.push({ value, resolve, reject, size });
-        bytes += size;
         if (!scheduled) { scheduled = true; setImmediate(pump); }
       });
     },
-    get queued() { return pending.length; },
   };
 }

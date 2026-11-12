@@ -13,14 +13,17 @@ onWorkflowChange(() => hooks.clear());
 async function findHook(path, method) {
   const key = `${method} ${path}`;
   const hit = isLive() ? hooks.get(key) : null;
-  if (hit && hit.exp > Date.now()) return hit;
+  if (hit && hit.exp > Date.now()) return hit.wf ? hit : null;
   // The exact method wins over ANY. The workflow comes in the same query.
   const row = await get(
     `SELECT w.*, h.node_id FROM webhooks h JOIN workflows w ON w.id = h.workflow_id
      WHERE h.path = ? AND h.method IN (?, 'ANY') ORDER BY CASE WHEN h.method = 'ANY' THEN 1 ELSE 0 END LIMIT 1`, path, method,
   );
   const wf = row && parseWorkflow(row);
-  if (!wf?.active) return null;
+  if (!wf?.active) {
+    if (isLive()) { if (hooks.size >= 500) hooks.clear(); hooks.set(key, { exp: Date.now() + 10_000 }); } // unknown paths cost no query for a few seconds
+    return null;
+  }
   const node = wf.definition.nodes.find((n) => n.id === row.node_id);
   const entry = { wf, node, params: withDefaults(getNodeType('trigger.webhook'), node?.parameters), exp: Date.now() + 60_000 };
   if (isLive()) { if (hooks.size >= 500) hooks.clear(); hooks.set(key, entry); }

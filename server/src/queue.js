@@ -75,7 +75,6 @@ function createMemoryDriver() {
     async removeSchedule(key) { schedules.get(key)?.(); schedules.delete(key); },
     async startWorker() { /* jobs run in-process as they are enqueued */ },
     async startEvents() {},
-    async stats() { return { mode: 'memory', running, waiting: waiting.length }; },
     async close() { for (const stop of schedules.values()) stop(); schedules.clear(); },
   };
 }
@@ -157,7 +156,6 @@ async function createBullDriver() {
       await worker.waitUntilReady();
     },
     startEvents: getEvents,
-    async stats() { return { mode: 'bullmq', ...(await queue.getJobCounts('waiting', 'active', 'delayed', 'failed')) }; },
     async close() {
       await worker?.close();
       await events?.close();
@@ -174,5 +172,4 @@ export const upsertSchedule = (key, spec, payload) => driver.upsertSchedule(key,
 export const removeSchedule = (key) => driver.removeSchedule(key);
 export const startWorker = () => driver.startWorker();
 export const startEvents = () => driver.startEvents();
-export const queueStats = () => driver.stats();
 export const closeQueue = () => driver.close();

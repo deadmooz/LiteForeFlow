@@ -29,15 +29,18 @@ const wfCache = new Map();
 const copyStatic = (sd) => (sd && Object.keys(sd).length ? structuredClone(sd) : {});
 onWorkflowChange(() => wfCache.clear());
 export async function loadWorkflowCached(id, workspaceId) {
-  const hit = isLive() ? wfCache.get(id) : null;
-  if (hit && hit.wf.workspaceId === workspaceId && hit.exp > Date.now()) return { ...hit.wf, staticData: copyStatic(hit.wf.staticData) };
-  const wf = await loadWorkflow(id, workspaceId);
-  if (wf && isLive()) {
-    if (wfCache.size >= 200) wfCache.clear();
-    wfCache.set(id, { wf, exp: Date.now() + 60_000 });
-    return { ...wf, staticData: copyStatic(wf.staticData) };
+  if (!isLive()) return loadWorkflow(id, workspaceId);
+  let hit = wfCache.get(id);
+  if (!hit || hit.ws !== workspaceId || hit.exp <= Date.now()) {
+    // Runs that arrive together share one lookup instead of each asking the database.
+    if (wfCache.size >= 2000) wfCache.delete(wfCache.keys().next().value);
+    const p = loadWorkflow(id, workspaceId);
+    hit = { ws: workspaceId, exp: Date.now() + 60_000, p };
+    wfCache.set(id, hit);
+    p.then((wf) => { if (!wf && wfCache.get(id) === hit) wfCache.delete(id); }, () => { if (wfCache.get(id) === hit) wfCache.delete(id); });
   }
-  return wf;
+  const wf = await hit.p;
+  return wf ? { ...wf, staticData: copyStatic(wf.staticData) } : wf;
 }
 
 /* ------------------------------ execution records ----------------------------- */

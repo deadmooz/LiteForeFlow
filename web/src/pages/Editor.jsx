@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant, Controls, MiniMap,
@@ -65,7 +65,7 @@ function EditorInner() {
   const reloadCredentials = useCallback(() => api('/credentials').then(setCredentials), []);
 
   useEffect(() => {
-    Promise.all([api('/node-types'), api(`/workflows/${id}`), api('/credentials'), api('/workflows')]).then(([t, wf, c, all]) => {
+    Promise.all([api('/node-types'), api(`/workflows/${id}`), api('/credentials'), api('/workflows?brief=1')]).then(([t, wf, c, all]) => {
       setTypes(t);
       setCredentials(c);
       setWorkflows(all.filter((w) => w.id !== id));
@@ -74,7 +74,7 @@ function EditorInner() {
       setNodes(wf.definition.nodes.filter((n) => map[n.type]).map((n) => toRF(n, map[n.type])));
       setEdges(wf.definition.connections.map(toEdge));
       setLoaded(true);
-    }).catch((e) => { setMessage({ kind: 'error', text: e.message }); });
+    }).catch((e) => fail(e));
   }, [id, setNodes, setEdges]);
 
   // Reflect run status on the canvas.
@@ -99,7 +99,7 @@ function EditorInner() {
       setMessage(wf.warning ? { kind: 'error', text: wf.warning } : { kind: 'ok', text: 'Saved' });
       return true;
     } catch (e) {
-      setMessage({ kind: 'error', text: e.message });
+      fail(e);
       return false;
     } finally { setBusy(''); }
   }, [id, meta, serialize]);
@@ -119,6 +119,8 @@ function EditorInner() {
   useEffect(() => { if (message?.kind === 'ok') { const t = setTimeout(() => setMessage(null), message.undo ? 6000 : 2500); return () => clearTimeout(t); } return undefined; }, [message]);
 
   const markDirty = () => setDirty(true);
+  const setSetting = (patch) => { setMeta({ ...meta, settings: { ...meta.settings, ...patch } }); markDirty(); };
+  const fail = (e) => setMessage({ kind: 'error', text: e.message });
 
   /* ---- undo and redo: snapshots of the serialised workflow, taken once things have been still for a moment ---- */
   const serializeRef = useRef(serialize); serializeRef.current = serialize;
@@ -149,7 +151,8 @@ function EditorInner() {
   const makeNode = (def, position) => {
     const parameters = {};
     for (const p of def.properties) if (p.default !== undefined) parameters[p.name] = structuredClone(p.default);
-    if (def.type === 'trigger.webhook') parameters.path = `hook-${rid()}`;
+    // A new webhook starts with its own secret, so a leaked address alone cannot use up the plan's runs. Clear the field to open it.
+    if (def.type === 'trigger.webhook') Object.assign(parameters, { path: `hook-${rid()}`, secret: Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('') });
     return { id: rid(), type: def.type, name: uniqueName(def.name), parameters, position };
   };
 
@@ -447,7 +450,7 @@ function EditorInner() {
       setLastRun(r);
       setMessage(r.status === 'success' ? { kind: 'ok', text: 'Run finished' } : { kind: 'error', text: `Failed at "${r.error?.nodeName ?? 'workflow'}": ${r.error?.message}` });
     } catch (e) {
-      setMessage({ kind: 'error', text: e.message });
+      fail(e);
     } finally { setBusy(''); }
   };
 
@@ -457,7 +460,7 @@ function EditorInner() {
       const r = await api(`/workflows/${id}/nodes/${selectedId}/test`, { method: 'POST', body: { definition: serialize() } });
       setResults((prev) => ({ ...prev, [selectedId]: r.result ?? { status: 'error', error: r.error?.message } }));
       setTab('output');
-    } catch (e) { setMessage({ kind: 'error', text: e.message }); } finally { setBusy(''); }
+    } catch (e) { fail(e); } finally { setBusy(''); }
   };
 
   const toggleActive = async () => {
@@ -466,7 +469,7 @@ function EditorInner() {
       const wf = await api(`/workflows/${id}/${meta.active ? 'deactivate' : 'activate'}`, { method: 'POST' });
       setMeta((m) => ({ ...m, active: wf.active }));
       setMessage({ kind: 'ok', text: wf.active ? 'Workflow activated' : 'Workflow deactivated' });
-    } catch (e) { setMessage({ kind: 'error', text: e.message }); }
+    } catch (e) { fail(e); }
   };
 
   const deleteSelected = () => {
@@ -648,7 +651,7 @@ function EditorInner() {
               <label>Error workflow
                 <select
                   value={meta.settings.errorWorkflowId ?? ''}
-                  onChange={(e) => { setMeta({ ...meta, settings: { ...meta.settings, errorWorkflowId: e.target.value || undefined } }); markDirty(); }}
+                  onChange={(e) => setSetting({ errorWorkflowId: e.target.value || undefined })}
                 >
                   <option value="">None</option>
                   {workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -658,20 +661,20 @@ function EditorInner() {
               <label>Timeout (seconds)
                 <input
                   type="number" min={1} value={meta.settings.timeoutSec ?? 300}
-                  onChange={(e) => { setMeta({ ...meta, settings: { ...meta.settings, timeoutSec: Number(e.target.value) } }); markDirty(); }}
+                  onChange={(e) => setSetting({ timeoutSec: Number(e.target.value) })}
                 />
               </label>
               <label className="inline">
                 <input
                   type="checkbox" checked={meta.settings.saveSuccessData ?? true}
-                  onChange={(e) => { setMeta({ ...meta, settings: { ...meta.settings, saveSuccessData: e.target.checked } }); markDirty(); }}
+                  onChange={(e) => setSetting({ saveSuccessData: e.target.checked })}
                 />
                 Keep node data of successful runs
               </label>
               <span className="muted small">Turn off for high-volume workflows to save storage. Failed runs and editor runs always keep full data.</span>
               <AlertSettings
                 workflowId={id} alerts={meta.settings.alerts} credentials={credentials} reloadCredentials={reloadCredentials}
-                onChange={(alerts) => { setMeta({ ...meta, settings: { ...meta.settings, alerts } }); markDirty(); }}
+                onChange={(alerts) => setSetting({ alerts })}
               />
               <p className="muted small">Workflow ID: <code>{id}</code></p>
               {lastRun && (

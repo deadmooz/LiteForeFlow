@@ -1,4 +1,4 @@
-import { httpRequest } from './http.js';
+import { httpRequest, ollamaModels } from './http.js';
 import { config } from './config.js';
 
 const secret = (name, label, extra = {}) => ({ name, label, type: 'password', required: true, ...extra });
@@ -97,15 +97,7 @@ const TESTS = {
     return 'Connected.';
   },
   async ollamaApi(d) {
-    const base = trimUrl(d.baseUrl || config.ollamaUrl);
-    let r;
-    try {
-      r = await httpRequest({ url: `${base}/api/tags`, headers: d.apiKey ? { authorization: `Bearer ${d.apiKey}` } : {}, timeoutMs: 8000, trustedOrigin: config.ollamaUrl });
-    } catch (e) {
-      if (e.unreachable && e.name !== 'TimeoutError') throw new Error(`Could not reach Ollama at ${base}. Is it running? Open the Ollama app (or run "ollama serve").`);
-      throw e;
-    }
-    const names = (r.data?.models ?? []).map((m) => m.name);
+    const names = await ollamaModels(d);
     return names.length
       ? `Connected. Installed models: ${names.join(', ')}.`
       : { ok: true, warn: true, message: 'Ollama is running, but no model is installed yet. Run: ollama pull llama3.2' };

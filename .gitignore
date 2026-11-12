@@ -11,7 +11,10 @@ coverage
 server/test/qa/*-results.json
 QA_REPORT.md
 
-# QA, benchmarks and their data (kept on disk, not in the repository). The unit tests (*.test.*) stay tracked.
+# All tests, QA and benchmark scripts and their data stay on disk only, not in the repository.
+server/test/
+web/test/
+scripts/test-db.mjs
 server/test/qa/
 server/test/ui/
 server/test/bench/
@@ -28,7 +31,6 @@ QA_REPORT.md
 *.cpuprofile
 prof/
 
-# All tests (unit tests included) stay on disk only
-server/test/
-web/test/
-scripts/test-db.mjs
+
+# Build output (the Docker image builds it from source)
+web/dist/

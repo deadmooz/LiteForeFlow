@@ -2,7 +2,6 @@ import { config } from './config.js';
 import { queueMode, startWorker, startEvents, closeQueue } from './queue.js';
 import './jobs.js';
 import { closeDb, get } from './db.js';
-import { createApp } from './app.js';
 import { initScheduler } from './scheduler.js';
 import { failInflightExecutions } from './runner.js';
 import { loadPlugins, watchPlugins } from './plugins.js';
@@ -50,7 +49,7 @@ try {
     if (queueMode === 'memory') await failInflightExecutions(); // anything in flight died with the previous process
     stops.push(await initScheduler());
     if (queueMode === 'bullmq') await startEvents(); // lets this process mark executions of crashed workers as failed
-    server = await listen(createApp());
+    server = await listen((await import('./app.js')).createApp()); // a worker never loads the web stack
     if (role === 'all' && queueMode === 'memory') {
       const firstRun = (await get('SELECT COUNT(*) AS n FROM users')).n === 0;
       console.log('');

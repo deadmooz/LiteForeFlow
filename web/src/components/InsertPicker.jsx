@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 /** A small "add a step here" menu: type to filter, arrow keys to move, Enter to pick, Esc to close. */
 export default function InsertPicker({ types, x, y, onPick, onClose }) {

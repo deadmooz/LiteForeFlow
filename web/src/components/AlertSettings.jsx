@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, fmtAgo } from '../api.js';
 import { useSession } from '../App.jsx';
 import { CredentialSelect } from './ParamForm.jsx';

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { Modal } from './common.jsx';
 import { SchedulePicker, TimezoneSelect } from './SchedulePicker.jsx';

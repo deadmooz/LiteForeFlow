@@ -2,6 +2,7 @@ import zlib from 'node:zlib';
 import { promisify } from 'node:util';
 
 const gzip = promisify(zlib.gzip);
+const gunzip = promisify(zlib.gunzip);
 
 /*
  * Execution logs are the biggest thing we store. They are highly repetitive JSON, so gzip shrinks them
@@ -21,4 +22,10 @@ export function unpack(stored) {
   return zlib.gunzipSync(Buffer.from(stored.slice(PREFIX.length), 'base64')).toString('utf8');
 }
 
-export const parseStored = (stored) => (stored ? JSON.parse(unpack(stored)) : null);
+/** Parses a stored log, decompressing on a thread-pool thread so a big log does not stall the server. */
+export async function parseStoredAsync(stored) {
+  if (!stored) return null;
+  if (typeof stored === 'string' && stored.startsWith(PREFIX)) return JSON.parse((await gunzip(Buffer.from(stored.slice(PREFIX.length), 'base64'))).toString('utf8'));
+  return JSON.parse(stored);
+}
+

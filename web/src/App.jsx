@@ -7,11 +7,10 @@ import Login from './pages/Login.jsx';
 import Workflows from './pages/Workflows.jsx';
 // The editor (with its canvas library) is the heavy part: it is only fetched when a workflow is opened.
 const Editor = lazy(() => import('./pages/Editor.jsx'));
-import Templates from './pages/Templates.jsx';
-import Executions from './pages/Executions.jsx';
-import Credentials from './pages/Credentials.jsx';
-import Settings from './pages/Settings.jsx';
-import Plugins from './pages/Plugins.jsx';
+const Templates = lazy(() => import('./pages/Templates.jsx'));
+const Executions = lazy(() => import('./pages/Executions.jsx'));
+const Credentials = lazy(() => import('./pages/Credentials.jsx'));
+const Settings = lazy(() => import('./pages/Settings.jsx'));
 
 const Session = createContext(null);
 export const useSession = () => useContext(Session);
@@ -101,7 +100,6 @@ function Shell() {
           <NavLink to="/templates">Templates</NavLink>
           <NavLink to="/executions">Executions</NavLink>
           <NavLink to="/credentials">Credentials</NavLink>
-          <NavLink to="/plugins">Plugins</NavLink>
           <NavLink to="/settings" title="Usage and plan">Plan</NavLink>
         </nav>
         <div className="sidebar-foot">
@@ -127,7 +125,6 @@ function Shell() {
           <Route path="/templates" element={<Templates />} />
           <Route path="/executions" element={<Executions />} />
           <Route path="/credentials" element={<Credentials />} />
-          <Route path="/plugins" element={<Plugins />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

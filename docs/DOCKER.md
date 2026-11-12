@@ -66,17 +66,4 @@ npm install
 npm test                     # the main suites on Postgres (starts a throwaway Postgres container; Docker must be running)
 # against real Postgres + Redis (set TEST_DATABASE_URL and TEST_REDIS_URL first):
 npm run test:all             # + the multi-process worker tests and the plugin-sync test
-node server/test/qa/qa-infra.mjs                 # production-stack scenarios incl. Redis/Postgres outage drills
-# against the running compose stack:
-node server/test/e2e-docker-features.mjs         # plugins on every worker, plugin switches, dropped-in plugin, schedules
-node server/test/e2e-compose.mjs                 # fan-out, cron, usage metering
 ```
-
-### What was verified for this edition
-
-- Lite suites on the Docker edition's code: the same suites on Postgres, 16 on Postgres + Redis, 3 multi-process worker tests,
-  3 cross-process plugin tests, 200 black-box scenarios (0 failures), 16 white-box checks, 8 production-stack scenarios with outage drills.
-- The image builds (391 MB) and runs as a non-root user; compose with 2 workers: plugins on both workers, plugin switches reaching both,
-  a plugin dropped in from the host, schedules firing once per tick, plugin state surviving restarts, and a real **Ollama** model
-  (running on the host) answering a workflow executed by a worker container.
-- **Not verified:** Docker on a Linux host (only Docker Desktop on Windows), several machines, Redis Sentinel/Cluster, HTTPS in front of it.

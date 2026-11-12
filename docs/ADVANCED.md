@@ -27,17 +27,12 @@ Put them in the `.env` file next to `docker-compose.yml`, for example `PORT=4000
 
 ## The code sandbox
 
-Expressions (`{{ ... }}`) and the Code node run in a sandbox. `/api/health` shows which one you have:
-
-- **`isolated-vm` (strong, default):** each run gets its own memory-capped V8 isolate on a separate thread. Safe for shared servers.
-- **`basic` (automatic fallback):** used when the optional package `isolated-vm` could not be installed (some older Macs and rare Linux
-  setups). It is a locked-down `node:vm` context: fine on your own computer, but it has no memory cap and a runaway loop can freeze
-  the server for a few seconds. To get the strong one: install build tools and run `npm install isolated-vm`.
+Expressions (`{{ ... }}`) and the Code node run in `isolated-vm`: each run gets its own memory-capped V8 isolate on a separate thread. `/api/health` reports it.
 
 ## Sharing it with other people
 
 By default LiteForeFlow listens on all network interfaces so you can reach it from your phone. Before letting others use it:
-set `ALLOW_SIGNUP=false` (after creating your accounts), set `BLOCK_PRIVATE_NETWORK=true`, make sure `isolated-vm` is in use,
+set `ALLOW_SIGNUP=false` (after creating your accounts), set `BLOCK_PRIVATE_NETWORK=true`,
 and put it behind HTTPS (for example Caddy or nginx). Do not expose it to the internet as-is.
 
 ## Scaling up (optional): Postgres + Redis + several workers
@@ -77,15 +72,14 @@ Add the credential type to `server/src/credentialTypes.js` and import your file 
 
 ## Changing the editor
 
-The editor source is in `web/`; the built result `web/dist/` is committed so end users never need a build step.
+The editor source is in `web/`; the built result `web/dist/` is not committed: the Docker image builds it from source.
 After changing the source: `npm run build` (installs the editor tooling the first time). For live reload: `npm run dev:web`
 in one terminal and `npm run dev` in another, then open http://localhost:5173.
 
 ## Tests
 
 ```bash
-npm test          # 15 integration tests, no extra services needed
-npm run qa        # ~200 black-box scenarios against freshly started servers (about 90 seconds)
+npm test          # unit and integration tests (starts a throwaway Postgres container; Docker must be running)
 ```
 
 Tests for the Postgres/Redis mode need running Postgres and Redis servers and `TEST_DATABASE_URL` / `TEST_REDIS_URL` set; `npm run test:all` then also runs the multi-process worker and plugin tests.
