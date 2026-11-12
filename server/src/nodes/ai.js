@@ -1,5 +1,5 @@
 import { defineNode } from './registry.js';
-import { httpRequest } from '../http.js';
+import { httpRequest, ollamaModels } from '../http.js';
 import { loadCredential } from '../credentials.js';
 import { runCode } from '../expressions.js';
 import { config } from '../config.js';
@@ -30,16 +30,7 @@ const providerProps = [
 /** The editor's model list for Ollama: whatever "ollama list" would show. */
 async function loadModels(ctx) {
   if (ctx.param('provider') !== 'ollama') return [];
-  const cred = await ctx.credential();
-  const origin = (cred.baseUrl || config.ollamaUrl).replace(/\/$/, '');
-  let res;
-  try {
-    res = await httpRequest({ url: `${origin}/api/tags`, headers: cred.apiKey ? { authorization: `Bearer ${cred.apiKey}` } : {}, timeoutMs: 8000, trustedOrigin: config.ollamaUrl });
-  } catch (e) {
-    if (e.unreachable && e.name !== 'TimeoutError') throw new Error(`Could not reach Ollama at ${origin}. Is it running?`);
-    throw e;
-  }
-  const names = (res.data?.models ?? []).map((m) => m.name);
+  const names = await ollamaModels(await ctx.credential());
   if (!names.length) throw new Error('Ollama is running but has no models yet. Run: ollama pull llama3.2');
   return names.map((n) => ({ value: n, label: n }));
 }
@@ -94,8 +85,7 @@ async function ollamaChat(cred, body) {
   if (res.status === 404 && /not found/i.test(detail)) {
     let have = '';
     try {
-      const tags = await httpRequest({ url: `${origin}/api/tags`, timeoutMs: 5000, trustedOrigin: config.ollamaUrl });
-      const names = (tags.data?.models ?? []).map((m) => m.name);
+      const names = await ollamaModels(cred, 5000);
       have = names.length ? ` Installed models: ${names.join(', ')}.` : ' No models are installed yet.';
     } catch { /* the hint is a bonus */ }
     throw new Error(`Ollama does not have the model "${model}". Install it with:  ollama pull ${model}.${have}`);

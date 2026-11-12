@@ -28,7 +28,6 @@ QA_REPORT.md
 *.cpuprofile
 prof/
 
-# All tests (unit tests included) stay on disk only
-server/test/
-web/test/
-scripts/test-db.mjs
+
+# Build output (the Docker image builds it from source)
+web/dist/

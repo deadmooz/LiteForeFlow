@@ -65,7 +65,7 @@ function EditorInner() {
   const reloadCredentials = useCallback(() => api('/credentials').then(setCredentials), []);
 
   useEffect(() => {
-    Promise.all([api('/node-types'), api(`/workflows/${id}`), api('/credentials'), api('/workflows')]).then(([t, wf, c, all]) => {
+    Promise.all([api('/node-types'), api(`/workflows/${id}`), api('/credentials'), api('/workflows?brief=1')]).then(([t, wf, c, all]) => {
       setTypes(t);
       setCredentials(c);
       setWorkflows(all.filter((w) => w.id !== id));
@@ -151,7 +151,8 @@ function EditorInner() {
   const makeNode = (def, position) => {
     const parameters = {};
     for (const p of def.properties) if (p.default !== undefined) parameters[p.name] = structuredClone(p.default);
-    if (def.type === 'trigger.webhook') parameters.path = `hook-${rid()}`;
+    // A new webhook starts with its own secret, so a leaked address alone cannot use up the plan's runs. Clear the field to open it.
+    if (def.type === 'trigger.webhook') Object.assign(parameters, { path: `hook-${rid()}`, secret: Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('') });
     return { id: rid(), type: def.type, name: uniqueName(def.name), parameters, position };
   };
 

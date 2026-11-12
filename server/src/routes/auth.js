@@ -15,13 +15,15 @@ export class HttpError extends Error {
 
 /* Tiny in-memory limiter for credential endpoints. Use a shared store behind multiple instances. */
 const attempts = new Map();
+const note = (ip) => attempts.set(ip, [...(attempts.get(ip) ?? []), Date.now()]);
+// Addresses that stopped coming are forgotten, so the map cannot grow for ever.
+setInterval(() => { const t = Date.now(); for (const [ip, ts] of attempts) if (!ts.length || t - ts[ts.length - 1] > 60_000) attempts.delete(ip); }, 60_000).unref();
+/** Sign-up counts every try; sign-in counts only wrong passwords (see the login route), so people behind one office address are not locked out by good logins. */
 function rateLimit(req, res, next) {
-  const key = req.ip;
-  const t = Date.now();
-  const recent = (attempts.get(key) ?? []).filter((x) => t - x < 60_000);
+  const recent = (attempts.get(req.ip) ?? []).filter((x) => Date.now() - x < 60_000);
+  attempts.set(req.ip, recent);
   if (recent.length >= config.authRateLimitPerMin) return next(new HttpError(429, 'Too many attempts, try again in a minute'));
-  recent.push(t);
-  attempts.set(key, recent);
+  if (!req.path.endsWith('/login')) note(req.ip);
   return next();
 }
 
@@ -66,7 +68,7 @@ authRouter.post('/login', rateLimit, async (req, res) => {
   const user = await get('SELECT * FROM users WHERE email = ?', String(email ?? '').trim().toLowerCase());
   // Compare even when the user is missing so response time does not reveal which emails exist.
   const ok = await bcrypt.compare(String(password ?? ''), user?.password_hash ?? '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinva');
-  if (!user || !ok) throw new HttpError(401, 'Invalid email or password');
+  if (!user || !ok) { note(req.ip); throw new HttpError(401, 'Invalid email or password'); }
   res.json({ token: sign(user.id), user: publicUser(user), workspaces: await workspacesOf(user.id) });
 });
 

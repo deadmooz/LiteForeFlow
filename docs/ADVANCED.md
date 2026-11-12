@@ -72,7 +72,7 @@ Add the credential type to `server/src/credentialTypes.js` and import your file 
 
 ## Changing the editor
 
-The editor source is in `web/`; the built result `web/dist/` is committed so end users never need a build step.
+The editor source is in `web/`; the built result `web/dist/` is not committed: the Docker image builds it from source.
 After changing the source: `npm run build` (installs the editor tooling the first time). For live reload: `npm run dev:web`
 in one terminal and `npm run dev` in another, then open http://localhost:5173.
 

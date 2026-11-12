@@ -51,7 +51,9 @@ const mustFind = async (req) => {
 };
 
 workflowsRouter.get('/', async (req, res) => {
-  res.json((await all('SELECT * FROM workflows WHERE workspace_id = ? ORDER BY updated_at DESC', req.workspaceId)).map(summary));
+  // ?brief=1 is just ids and names (the editor's "when this fails, run" list): no definitions to read or parse.
+  if (req.query.brief) return res.json(await all('SELECT id, name FROM workflows WHERE workspace_id = ? ORDER BY name LIMIT 1000', req.workspaceId));
+  res.json((await all('SELECT * FROM workflows WHERE workspace_id = ? ORDER BY updated_at DESC LIMIT 1000', req.workspaceId)).map(summary));
 });
 
 workflowsRouter.post('/', async (req, res) => {
