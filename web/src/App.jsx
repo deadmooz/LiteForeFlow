@@ -11,7 +11,6 @@ const Templates = lazy(() => import('./pages/Templates.jsx'));
 const Executions = lazy(() => import('./pages/Executions.jsx'));
 const Credentials = lazy(() => import('./pages/Credentials.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
-const Plugins = lazy(() => import('./pages/Plugins.jsx'));
 
 const Session = createContext(null);
 export const useSession = () => useContext(Session);
@@ -101,7 +100,6 @@ function Shell() {
           <NavLink to="/templates">Templates</NavLink>
           <NavLink to="/executions">Executions</NavLink>
           <NavLink to="/credentials">Credentials</NavLink>
-          <NavLink to="/plugins">Plugins</NavLink>
           <NavLink to="/settings" title="Usage and plan">Plan</NavLink>
         </nav>
         <div className="sidebar-foot">
@@ -127,7 +125,6 @@ function Shell() {
           <Route path="/templates" element={<Templates />} />
           <Route path="/executions" element={<Executions />} />
           <Route path="/credentials" element={<Credentials />} />
-          <Route path="/plugins" element={<Plugins />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

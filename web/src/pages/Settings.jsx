@@ -13,7 +13,7 @@ const Meter = ({ label, value, max }) => (
 );
 
 export default function Settings() {
-  const { me, refresh } = useSession();
+  const { me } = useSession();
   const [usage, setUsage] = useState(null);
   const [members, setMembers] = useState([]);
   const [email, setEmail] = useState('');
@@ -22,21 +22,6 @@ export default function Settings() {
 
   const load = () => { api('/usage').then(setUsage); api('/workspace/members').then(setMembers); };
   useEffect(load, []);
-
-  const upgrade = async (plan) => {
-    setMsg(null);
-    try {
-      const { url } = await api('/billing/checkout', { method: 'POST', body: { plan } });
-      window.location.assign(url);
-    } catch (e) {
-      if (e.status === 501) {
-        // Stripe is not configured (local/dev): offer the demo switch instead.
-        if (window.confirm('Billing is not configured on this server. Switch plan in demo mode (no payment)?')) {
-          try { setUsage({ ...usage, ...(await api('/billing/dev-plan', { method: 'POST', body: { plan } })) }); await refresh(); load(); } catch (err) { setMsg({ kind: 'error', text: err.message }); }
-        }
-      } else setMsg({ kind: 'error', text: e.message });
-    }
-  };
 
   const removeMember = async (m) => {
     const leaving = m.id === me.user.id;
@@ -70,24 +55,6 @@ export default function Settings() {
         <Meter label="Active workflows" value={usage.activeWorkflows} max={plan.activeWorkflows} />
         <Meter label="Members" value={usage.members} max={plan.members} />
         <p className="muted small">Runs are counted per workflow execution — never per step or node — and execution logs are kept for {plan.logRetentionDays} days.</p>
-      </div>
-
-      <h3>Plans</h3>
-      <div className="grid">
-        {usage.plans.map((p) => (
-          <div className={`card plan ${p.id === plan.id ? 'current' : ''}`} key={p.id}>
-            <h3>{p.name}</h3>
-            <div className="price">${p.priceUsd}<span className="muted small">/month</span></div>
-            <ul>
-              <li>{p.activeWorkflows.toLocaleString()} active workflows</li>
-              <li>{p.runsPerMonth.toLocaleString()} runs / month</li>
-              <li>{p.members} member{p.members > 1 ? 's' : ''}</li>
-              <li>{p.logRetentionDays}-day execution history</li>
-            </ul>
-            {p.id === plan.id ? <button disabled>Current plan</button>
-              : p.priceUsd > 0 && <button className="primary" disabled={!isOwner} onClick={() => upgrade(p.id)}>Switch to {p.name}</button>}
-          </div>
-        ))}
       </div>
 
       <h3>Members</h3>
