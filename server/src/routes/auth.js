@@ -123,11 +123,11 @@ meRouter.delete('/workspace/members/:userId', async (req, res) => {
 
 meRouter.post('/workspace/invite', async (req, res) => {
   if (req.role !== 'owner') throw new HttpError(403, 'Only the workspace owner can invite members');
+  await assertCanInvite(req.workspaceId); // first, so the answer is the same whether or not the email has an account
   const email = String(req.body?.email ?? '').trim().toLowerCase();
   const user = await get('SELECT id FROM users WHERE email = ?', email);
   if (!user) throw new HttpError(404, 'No account with that email yet — ask them to sign up first');
   if (await get('SELECT 1 AS x FROM members WHERE workspace_id = ? AND user_id = ?', req.workspaceId, user.id)) throw new HttpError(409, 'Already a member');
-  await assertCanInvite(req.workspaceId);
   await run('INSERT INTO members (workspace_id, user_id, role, created_at) VALUES (?,?,?,?)', req.workspaceId, user.id, 'member', now());
   res.status(201).json({ ok: true });
 });

@@ -195,3 +195,16 @@ export async function ollamaModels(cred, timeoutMs = 8000) {
     throw e;
   }
 }
+
+/**
+ * The address to connect to for a host the user typed (a database, a mail server). With private-network blocking on, a name or
+ * number that points inside is refused. The name is looked up once and the address used as it is, so it cannot change meanwhile.
+ */
+export async function publicHost(host) {
+  const h = String(host ?? '').trim().replace(/^\[|\]$/g, '');
+  if (!h) throw new Error('No host is set');
+  if (!config.blockPrivateNetwork) return h;
+  const addrs = net.isIP(h) ? [h] : (await dns.promises.lookup(h, { all: true })).map((a) => a.address);
+  if (addrs.some(isPrivateIp)) throw new Error(BLOCKED);
+  return addrs[0];
+}
