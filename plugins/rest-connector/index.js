@@ -1,7 +1,7 @@
 /*
  * REST connector: one JSON file per service -> one node + one credential type.
  * Read plugins/rest-connector/services/_example-service.json (and docs/PLUGINS.md) to describe your own.
- * Your own service files go in  <data folder>/plugin-data/rest-connector/services/  (created on first use).
+ * Your own service files go in  plugins-user/_rest-services/  (Docker), or <data folder>/plugin-data/rest-connector/services/ . They are read at start-up: restart after adding one.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -73,7 +73,7 @@ export function reasonOf(d) {
 }
 
 export function register(sdk) {
-  const dirs = [path.join(sdk.pluginDir, 'services'), path.join(sdk.dataDir(), 'services')];
+  const dirs = [path.join(sdk.pluginDir, 'services'), path.join(sdk.dataDir(), 'services'), process.env.PLUGINS_DIR && path.join(process.env.PLUGINS_DIR, '_rest-services')].filter(Boolean);
   const files = dirs.flatMap((d) => { try { return fs.readdirSync(d).filter((f) => f.endsWith('.json') && !f.startsWith('_')).map((f) => path.join(d, f)); } catch { return []; } });
   const loaded = [];
   for (const file of files) {

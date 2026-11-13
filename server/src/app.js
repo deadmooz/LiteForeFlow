@@ -84,8 +84,10 @@ export function createApp() {
       const text = JSON.stringify(body);
       if (text === undefined || text.length < 1024 || res.headersSent) return json(body);
       // Same ETag / 304 behaviour as a plain answer, so the browser does not download an unchanged list again.
-      res.set('ETag', `W/"${crypto.createHash('sha1').update(text).digest('base64url')}"`);
-      if (req.fresh) return res.status(304).end();
+      if (text.length < 262144) { // hashing a huge body would cost more than it saves
+        res.set('ETag', `W/"${crypto.createHash('sha1').update(text).digest('base64url')}"`);
+        if (req.fresh) return res.status(304).end();
+      }
       const send = (buf) => {
         if (!res.getHeader('content-type')) res.type('application/json');
         res.set({ 'content-encoding': 'gzip', 'content-length': buf.length });

@@ -67,7 +67,7 @@ authRouter.post('/login', rateLimit, async (req, res) => {
   // Compare even when the user is missing so response time does not reveal which emails exist.
   const ok = await bcrypt.compare(String(password ?? ''), user?.password_hash ?? '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinva');
   if (!user || !ok) throw new HttpError(401, 'Invalid email or password');
-  attempts.get(req.ip)?.pop(); // a right password does not count against the office address
+  attempts.get(req.ip)?.pop(); // a right password does not count against the office address (it hands back the newest try: the total stays exact, which one it was does not matter)
   res.json({ token: sign(user.id), user: publicUser(user), workspaces: await workspacesOf(user.id) });
 });
 

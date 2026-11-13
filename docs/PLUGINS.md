@@ -31,8 +31,8 @@ The **REST connector** turns a small description into a full block: operation li
 **Test connection**, and live dropdowns (for example "pick one of your Trello boards").
 
 1. Copy `plugins/rest-connector/services/_example-service.json` to
-   `data/plugin-data/rest-connector/services/yourservice.json` (the folder is created the first time the plugin loads).
-2. Edit it (see the table below); the API and every worker pick it up within a few seconds.
+   `plugins-user/_rest-services/yourservice.json` (create the folder; a leading `_` keeps it from being read as a plugin).
+2. Edit it (see the table below), then restart so the API and workers read it: `docker compose restart api worker`.
 3. A new block with the service name appears in the palette.
 
 A mistake in the file never breaks the app: that one file is skipped and the reason is printed in the server window.

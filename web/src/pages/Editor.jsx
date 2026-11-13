@@ -148,11 +148,12 @@ function EditorInner() {
     return `${base} ${i}`;
   };
 
+  const newSecret = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
   const makeNode = (def, position) => {
     const parameters = {};
     for (const p of def.properties) if (p.default !== undefined) parameters[p.name] = structuredClone(p.default);
     // A new webhook starts with its own secret, so a leaked address alone cannot use up the plan's runs. Clear the field to open it.
-    if (def.type === 'trigger.webhook') Object.assign(parameters, { path: `hook-${rid()}`, secret: Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('') });
+    if (def.type === 'trigger.webhook') Object.assign(parameters, { path: `hook-${rid()}`, secret: newSecret() });
     return { id: rid(), type: def.type, name: uniqueName(def.name), parameters, position };
   };
 
@@ -232,6 +233,8 @@ function EditorInner() {
     pasteCount.current += 1;
     const off = step * pasteCount.current;
     const made = clonePaste(usable, nodesRef.current.map((n) => n.data.node.name), { dx: off, dy: off, newId: rid });
+    // A pasted or duplicated webhook is its own address with its own secret, never a twin of the original.
+    for (const n of made.nodes) if (n.type === 'trigger.webhook') n.parameters = { ...n.parameters, path: `hook-${rid()}`, ...(n.parameters.secret ? { secret: newSecret() } : {}) };
     setNodes((cur) => [...cur.map((n) => ({ ...n, selected: false })), ...made.nodes.map((n) => ({ ...toRF(n, typeMap[n.type]), selected: true }))]);
     setEdges((cur) => [...cur, ...made.connections.map(toEdge)]);
     setSelectedId(made.nodes.length === 1 ? made.nodes[0].id : null);
@@ -479,6 +482,7 @@ function EditorInner() {
     markDirty();
   };
 
+  const copySecret = (v) => (navigator.clipboard?.writeText(v) ?? Promise.reject()).then(() => setMessage({ kind: 'ok', text: 'Secret copied' }), () => window.prompt('Copy the secret:', v));
   const webhookUrls = meta?.active
     ? nodes.filter((n) => n.data.node.type === 'trigger.webhook').map((n) => ({ name: n.data.node.name, url: `${window.location.origin}/webhook/${effectiveParams(n.data.def, n.data.node.parameters).path}`, method: effectiveParams(n.data.def, n.data.node.parameters).method, secret: effectiveParams(n.data.def, n.data.node.parameters).secret }))
     : [];
@@ -535,7 +539,7 @@ function EditorInner() {
           {webhookUrls.map((w) => (
             <span key={w.name}>
               <b>{w.name}</b> <code>{w.method} {w.url}</code>
-              {w.secret ? <> · callers must send the header <code>x-webhook-secret: {w.secret}</code> (clear the Shared secret field to allow calls without it)</> : null}
+              {w.secret ? <> · callers must send the header <code>x-webhook-secret</code> <button className="link" onClick={() => copySecret(w.secret)}>Copy secret</button> (clear the Shared secret field to allow calls without it)</> : null}
             </span>
           ))}
         </div>
