@@ -14,7 +14,7 @@ Put them in the `.env` file next to `docker-compose.yml`, for example `PORT=4000
 | `DATA_DIR` | `./data` (next to the app) | Where the database and the encryption key live |
 | `LITEFOREFLOW_SECRET` | auto-created in `data/.secret` | Master key for saved credentials and logins. **Back it up** - without it saved credentials cannot be read |
 | `ALLOW_SIGNUP` | `true` | Set `false` after you created your account so nobody else can register |
-| `BLOCK_PRIVATE_NETWORK` | `false` | `true` stops the HTTP node (and AI agent) reaching `localhost` / internal addresses. Turn on if others use your server |
+| `BLOCK_PRIVATE_NETWORK` | `false` | `true` stops the HTTP node, the AI agent and the Postgres and Email blocks reaching `localhost` / internal addresses. Turn on if others use your server |
 | `OLLAMA_HOST` | `localhost:11434` | Where the Ollama local-AI server runs. Still reachable by the AI nodes when `BLOCK_PRIVATE_NETWORK=true`; other internal addresses stay blocked |
 | `ITEM_CONCURRENCY` | `5` | How many items a read-only API block (HTTP Request GET, the REST connector's GET operations) may fetch at the same time (1-20). `1` = strictly one after another, polite to rate-limited services. POST/PUT/DELETE calls never overlap |
 | `ALERT_COOLDOWN_MIN` | `10` | Failure alerts ("Tell me if this fails" in a workflow's settings): at most one message per workflow in this many minutes, so a broken schedule cannot flood you. The next message says how many were held back. `0` turns the limit off |

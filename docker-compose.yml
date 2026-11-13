@@ -10,7 +10,7 @@ x-app: &app
   build: .
   restart: unless-stopped
   environment: &env
-    DATABASE_URL: postgres://liteforeflow:${POSTGRES_PASSWORD:-liteforeflow}@postgres:5432/liteforeflow
+    DATABASE_URL: postgres://liteforeflow:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (a long random value)}@postgres:5432/liteforeflow
     REDIS_URL: redis://redis:6379
     LITEFOREFLOW_SECRET: ${LITEFOREFLOW_SECRET:?set LITEFOREFLOW_SECRET in .env (it encrypts stored credentials - back it up)}
     PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
@@ -42,7 +42,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: liteforeflow
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-liteforeflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (a long random value)}
       POSTGRES_DB: liteforeflow
     # Every container keeps a small connection pool (up to 10): 200 leaves room for the API plus many workers.
     command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=256MB", "-c", "random_page_cost=1.1", "-c", "wal_compression=on", "-c", "wal_buffers=16MB", "-c", "checkpoint_timeout=15min", "-c", "max_wal_size=2GB", "-c", "commit_delay=300", "-c", "commit_siblings=3"]

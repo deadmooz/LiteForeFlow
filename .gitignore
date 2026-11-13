@@ -37,3 +37,4 @@ web/dist/
 
 # Local launcher
 start.bat
+stop.bat
