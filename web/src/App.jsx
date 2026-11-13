@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Menu, Zap, ChevronsLeft } from 'lucide-react';
 import { api, auth, firstName, initials, setUnauthorizedHandler } from './api.js';
 import { ErrorState, Loading } from './components/common.jsx';
 import { applyTheme, getTheme, useStoredFlag } from './hooks.js';
@@ -88,12 +89,12 @@ function Shell() {
   return (
     <div className="shell">
       {!editing && navHidden && (
-        <div className="sidebar-rail"><button className="icon" onClick={toggleNav} aria-label="Show the menu" title="Show the menu">☰</button></div>
+        <div className="sidebar-rail"><button className="icon" onClick={toggleNav} aria-label="Show the menu" title="Show the menu"><Menu size={16} strokeWidth={1.75} aria-hidden="true" /></button></div>
       )}
       {!editing && !navHidden && <aside className="sidebar">
         <div className="brand-row">
-          <div className="brand">⚡ LiteForeFlow</div>
-          <button className="icon" onClick={toggleNav} aria-label="Hide the menu" title="Hide the menu">«</button>
+          <div className="brand"><Zap size={16} strokeWidth={1.75} aria-hidden="true" /> LiteForeFlow</div>
+          <button className="icon" onClick={toggleNav} aria-label="Hide the menu" title="Hide the menu"><ChevronsLeft size={16} strokeWidth={1.75} aria-hidden="true" /></button>
         </div>
         <nav>
           <NavLink to="/" end>Workflows</NavLink>

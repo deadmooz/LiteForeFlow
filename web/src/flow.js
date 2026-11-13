@@ -312,3 +312,16 @@ export function createHistory(limit = 100) {
     get ready() { return present !== null; },
   };
 }
+
+// One size for every step, so the lines and handles sit exactly where the geometry in flow.js expects them: 200 wide, 52 tall
+// (taller only when a step has several handles, 18 px each).
+export const NODE_W = 200;
+export const nodeHeight = (inputs, outs) => { const n = Math.max(inputs, outs); return n > 1 ? Math.max(52, 20 + 18 * n) : 52; };
+
+// The second line of a step: what it points at (address, channel, ...) when it has one, else what kind of step it is.
+const SUB_KEYS = ['url', 'path', 'channel', 'to', 'expression'];
+export function subtitle(node, def) {
+  const p = node.parameters ?? {};
+  const k = SUB_KEYS.find((x) => typeof p[x] === 'string' && p[x].trim());
+  return k ? `${k === 'url' && p.method ? `${p.method} ` : ''}${p[k].trim()}` : def.name;
+}

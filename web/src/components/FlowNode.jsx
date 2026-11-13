@@ -1,5 +1,8 @@
 import React from 'react';
 import { Handle, Position, getSmoothStepPath } from '@xyflow/react';
+import { CircleCheck, CircleAlert, LoaderCircle } from 'lucide-react';
+import { NodeIcon } from '../icons.jsx';
+import { NODE_W, nodeHeight, subtitle } from '../flow.js';
 
 /* What is drawn on the canvas: one step, the dotted line while a connection is dragged, and the converters between the
  * saved workflow ({ nodes, connections }) and React Flow's nodes and edges. */
@@ -16,21 +19,27 @@ export const outputLabel = (node, def, i) => {
   return null;
 };
 
+export { NODE_W };
+export const sizeOf = (node, def) => ({ w: NODE_W, h: nodeHeight(def.inputs ?? 1, outputCount(node, def)) });
+
+const STATE_ICON = { success: CircleCheck, error: CircleAlert, running: LoaderCircle };
+
 export const FlowNode = React.memo(function FlowNode({ data, selected }) {
   const { node, def, status } = data;
   const inputs = def.inputs ?? 1;
   const outs = outputCount(node, def);
-  const h = Math.max(inputs, outs) > 1 ? 28 + Math.max(inputs, outs) * 18 : 56;
+  const Mark = STATE_ICON[status];
   return (
-    <div className={`ff-node ${selected ? 'selected' : ''} ${status ?? ''} ${node.disabled ? 'disabled' : ''}`} style={{ minHeight: h }}>
+    <div className={`ff-node ${selected ? 'selected' : ''} ${status ?? ''} ${node.disabled ? 'disabled' : ''}`} style={{ height: nodeHeight(inputs, outs) }}>
       {Array.from({ length: inputs }, (_, i) => (
         <Handle key={`in-${i}`} id={`in-${i}`} type="target" position={Position.Left} className={data.near === `in-${i}` ? 'near' : undefined} style={{ top: `${((i + 1) * 100) / (inputs + 1)}%` }} />
       ))}
-      <div className="ff-node-icon">{def.icon}</div>
+      <div className="ff-node-icon"><NodeIcon name={def.icon} size={18} /></div>
       <div className="ff-node-text">
         <div className="ff-node-name">{node.name}</div>
-        <div className="ff-node-type">{def.name}</div>
+        <div className="ff-node-type">{subtitle(node, def)}</div>
       </div>
+      {Mark && <Mark className={`ff-node-state ${status}`} size={14} strokeWidth={2} aria-label={status} />}
       {Array.from({ length: outs }, (_, i) => (
         <Handle key={`out-${i}`} id={`out-${i}`} type="source" position={Position.Right} className={data.near === `out-${i}` ? 'near' : undefined} style={{ top: `${((i + 1) * 100) / (outs + 1)}%` }}>
           {outputLabel(node, def, i) !== null && <span className="handle-label">{outputLabel(node, def, i)}</span>}
@@ -70,7 +79,7 @@ export function ConnectionLine({ fromX, fromY, toX, toY, fromPosition, toPositio
 }
 
 // initialWidth/Height let the lines of a brand-new step draw at once instead of waiting for the first measurement.
-export const toRF = (node, def, status) => ({ id: node.id, type: 'ff', position: node.position ?? { x: 0, y: 0 }, initialWidth: 190, initialHeight: 56, data: { node, def, status } });
+export const toRF = (node, def, status) => ({ id: node.id, type: 'ff', position: node.position ?? { x: 0, y: 0 }, initialWidth: NODE_W, initialHeight: nodeHeight(def.inputs ?? 1, outputCount(node, def)), data: { node, def, status } });
 export const toEdge = (c) => ({
   id: `${c.from}-${c.fromOutput ?? 0}-${c.to}-${c.toInput ?? 0}`, source: c.from, target: c.to,
   sourceHandle: `out-${c.fromOutput ?? 0}`, targetHandle: `in-${c.toInput ?? 0}`,

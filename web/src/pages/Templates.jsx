@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { NodeIcon } from '../icons.jsx';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { Loading } from '../components/common.jsx';
@@ -44,7 +45,7 @@ export default function Templates() {
               <h3>{t.name}</h3>
               <p className="muted">{t.description}</p>
               <div className="row gap wrap icons">
-                {t.nodeTypes.map((nt) => <span key={nt} title={nodeTypes[nt]?.name}>{nodeTypes[nt]?.icon}</span>)}
+                {t.nodeTypes.map((nt) => <span key={nt} title={nodeTypes[nt]?.name}><NodeIcon name={nodeTypes[nt]?.icon} /></span>)}
               </div>
               <button className="primary" disabled={!!busy} onClick={() => use(t.id)}>{busy === t.id ? 'Creating…' : 'Use template'}</button>
             </div>

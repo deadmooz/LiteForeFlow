@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Play, SearchX, ChevronDown, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api, fmtAgo, fmtDate, fmtDuration } from '../api.js';
 import { EmptyState, ErrorState, Loading, Modal, NodeResult, StatusBadge } from '../components/common.jsx';
@@ -118,8 +119,8 @@ export default function Executions() {
       </div>
       {error && !rows ? <ErrorState message={error} onRetry={() => reload()} />
         : !shown ? <Loading rows={8} />
-          : rows.length === 0 ? <EmptyState icon="▶" title="No executions yet">Run a workflow and it will show up here.</EmptyState>
-            : shown.length === 0 ? <EmptyState icon="⌕" title="No match">Nothing in the {rows.length} loaded runs matches “{query}”. {more && 'Load more runs, or clear the search.'}</EmptyState>
+          : rows.length === 0 ? <EmptyState icon={<Play size={20} strokeWidth={1.75} />} title="No executions yet">Run a workflow and it will show up here.</EmptyState>
+            : shown.length === 0 ? <EmptyState icon={<SearchX size={20} strokeWidth={1.75} />} title="No match">Nothing in the {rows.length} loaded runs matches “{query}”. {more && 'Load more runs, or clear the search.'}</EmptyState>
               : (
                 <VirtualList
                   rows={shown} rowHeight={rowHeight} columns={COLS} rowKey={rowKey} renderRow={renderRow}
@@ -151,7 +152,7 @@ function ExecutionModal({ id, onClose }) {
           {Object.entries(ex.results ?? {}).map(([nodeId, r]) => (
             <div key={nodeId} className="card flat">
               <button className="link row gap" onClick={() => setOpen(open === nodeId ? null : nodeId)} aria-expanded={open === nodeId}>
-                <span>{open === nodeId ? '▾' : '▸'}</span> <b>{r.name ?? nodeId}</b> <StatusBadge status={r.status} />
+                <span>{open === nodeId ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}</span> <b>{r.name ?? nodeId}</b> <StatusBadge status={r.status} />
                 {r.durationMs !== undefined && <span className="muted small">{r.durationMs} ms</span>}
               </button>
               {open === nodeId && <NodeResult result={r} />}

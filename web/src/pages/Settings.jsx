@@ -67,7 +67,7 @@ export default function Settings() {
             )}
           </li>
         ))}</ul>
-        {isOwner && (
+        {isOwner && usage.members < plan.members && (
           <form className="row gap" onSubmit={invite}>
             <input type="email" required placeholder="teammate@company.com (must already have an account)" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Invite by email" />
             <button className="primary">Add member</button>

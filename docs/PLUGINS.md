@@ -6,7 +6,7 @@ The **Plugins** page in the app lists them, shows what each one adds, and (for t
 | Where | What |
 |---|---|
 | `plugins/<name>/` | Comes with LiteForeFlow ("bundled") |
-| `data/plugins/<name>/` | **Yours.** Drop a folder here, then press **Reload** on the Plugins page (or restart) |
+| `plugins-user/<name>/` (next to `docker-compose.yml`) | **Yours.** Drop a folder here; the API and every worker pick it up within a few seconds |
 | `PLUGINS_DIR` | Optional extra folder to scan (set in `.env`) |
 
 Folders whose name starts with `_` or `.` are ignored.
@@ -31,8 +31,8 @@ The **REST connector** turns a small description into a full block: operation li
 **Test connection**, and live dropdowns (for example "pick one of your Trello boards").
 
 1. Copy `plugins/rest-connector/services/_example-service.json` to
-   `data/plugin-data/rest-connector/services/yourservice.json` (the folder is created the first time the plugin loads).
-2. Edit it (see the table below), then press **Reload** on the Plugins page.
+   `plugins-user/_rest-services/yourservice.json` (create the folder; a leading `_` keeps it from being read as a plugin).
+2. Edit it (see the table below), then restart so the API and workers read it: `docker compose restart api worker`.
 3. A new block with the service name appears in the palette.
 
 A mistake in the file never breaks the app: that one file is skipped and the reason is printed in the server window.
@@ -73,12 +73,12 @@ If the web address contains a per-account part, such as `https://{subdomain}.exa
 ## Option B - write a plugin in JavaScript
 
 ```text
-data/plugins/my-plugin/
+plugins-user/my-plugin/
   plugin.json     { "id": "my-plugin", "name": "My Plugin", "version": "1.0.0", "description": "...", "apiVersion": 1 }
   index.js        export function register(sdk) { ... }
 ```
 
-Quickest start: `npm run plugin:new -- my-plugin` creates this folder from a working example, then press **Reload**.
+Quickest start: `npm run plugin:new -- my-plugin` creates this folder from a working example. It is picked up within seconds.
 
 ```js
 export function register(sdk) {

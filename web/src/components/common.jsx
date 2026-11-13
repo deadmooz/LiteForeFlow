@@ -1,16 +1,22 @@
 import React, { useEffect, useMemo, useRef } from 'react';
+import { X, Inbox, TriangleAlert } from 'lucide-react';
 
 const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
-export function Modal({ title, onClose, children, wide }) {
+// Windows that are open at the same moment (one counts as many) keep the page behind from scrolling.
+let openModals = 0;
+
+/** head replaces the plain title, footer sits under the scrolling body, className picks a size (see .modal.node). */
+export function Modal({ title, onClose, children, wide, head, footer, className = '' }) {
   const box = useRef(null);
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
     // Keyboard users: move focus into the dialog, keep Tab inside it, and give focus back when it closes.
     const before = document.activeElement;
-    const first = box.current?.querySelector('.modal-body input, .modal-body select, .modal-body textarea, .modal-body button, .modal-body a[href]');
+    const first = box.current?.querySelector('[data-autofocus], .modal-body input, .modal-body select, .modal-body textarea') ?? box.current?.querySelector('.modal-body button, .modal-body a[href]');
     (first ?? box.current)?.focus();
+    openModals += 1; document.body.style.overflow = 'hidden';
     const onKey = (e) => {
       if (e.key === 'Escape') { close.current(); return; }
       if (e.key !== 'Tab' || !box.current) return;
@@ -22,16 +28,17 @@ export function Modal({ title, onClose, children, wide }) {
       else if (!e.shiftKey && document.activeElement === tail) { e.preventDefault(); head.focus(); }
     };
     window.addEventListener('keydown', onKey);
-    return () => { window.removeEventListener('keydown', onKey); if (before?.isConnected) before.focus?.(); };
+    return () => { window.removeEventListener('keydown', onKey); openModals -= 1; if (!openModals) document.body.style.overflow = ''; if (before?.isConnected) before.focus?.(); };
   }, []);
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={box} tabIndex={-1} className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={box} tabIndex={-1} className={`modal ${wide ? 'wide' : ''} ${className}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-head">
-          <h2>{title}</h2>
-          <button className="icon" onClick={onClose} aria-label="Close">✕</button>
+          {head ?? <h2>{title}</h2>}
+          <button className="icon" onClick={onClose} aria-label="Close"><X size={16} strokeWidth={1.75} aria-hidden="true" /></button>
         </div>
         <div className="modal-body">{children}</div>
+        {footer && <div className="modal-foot">{footer}</div>}
       </div>
     </div>
   );
@@ -76,7 +83,7 @@ export function Loading({ rows = 5, cards = false }) {
   );
 }
 
-export function EmptyState({ icon = '✦', title, children }) {
+export function EmptyState({ icon = <Inbox size={20} strokeWidth={1.75} />, title, children }) {
   return (
     <div className="card state">
       <div className="state-icon" aria-hidden="true">{icon}</div>
@@ -90,7 +97,7 @@ export function EmptyState({ icon = '✦', title, children }) {
 export function ErrorState({ message, onRetry }) {
   return (
     <div className="card state bad" role="alert">
-      <div className="state-icon" aria-hidden="true">!</div>
+      <div className="state-icon" aria-hidden="true"><TriangleAlert size={20} strokeWidth={1.75} /></div>
       <h3 style={{ margin: 0 }}>That did not work</h3>
       <p className="muted">{message}</p>
       {onRetry && <button className="primary" onClick={onRetry}>Try again</button>}

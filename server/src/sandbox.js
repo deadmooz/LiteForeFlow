@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { config } from './config.js';
 
 /*
  * Sandbox for {{ expressions }} and the Code node.
@@ -24,7 +25,7 @@ import { createRequire } from 'node:module';
 const MEMORY_MB = Number(process.env.SANDBOX_MEMORY_MB) || 64;
 const MAX_RESULT_CHARS = 5_000_000;
 const MAX_LOG_LINES = 200;
-const POOL_IDLE_MAX = Math.min(16, Math.max(2, Number(process.env.MAX_CONCURRENCY) || 10)); // isolates kept ready: enough for the runs that can overlap
+const POOL_IDLE_MAX = Math.min(16, Math.max(2, config.maxConcurrency)); // isolates kept ready: enough for the runs that can overlap
 const POOL_IDLE_MS = 10_000; // ...for this long
 const POOL_MAX_USES = 400; // then replaced
 const POOL_MAX_HEAP = 4 * 1048576; // an isolate that holds more than this (a big job) is dropped at once, so its memory is freed; small jobs stay under ~2 MB

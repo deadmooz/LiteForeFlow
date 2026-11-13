@@ -127,7 +127,7 @@ async function complete({ provider, cred, model, system, prompt, temperature, ma
 }
 
 defineNode({
-  type: 'ai.llm', name: 'LLM', group: 'ai', icon: '🧠', credentialType: 'openaiApi',
+  type: 'ai.llm', name: 'LLM', group: 'ai', icon: 'Brain', credentialType: 'openaiApi',
   description: 'Send a prompt to an LLM: OpenAI, Anthropic, Ollama (free, on your own computer) or any OpenAI-compatible API.',
   properties: [
     ...providerProps,
@@ -234,7 +234,7 @@ async function runAgent({ provider, cred, model, system, prompt, tools, maxSteps
 }
 
 defineNode({
-  type: 'ai.agent', name: 'AI Agent', group: 'ai', icon: '🤖', credentialType: 'openaiApi',
+  type: 'ai.agent', name: 'AI Agent', group: 'ai', icon: 'Bot', credentialType: 'openaiApi',
   description: 'An LLM that can decide to call tools (HTTP GET, calculator, clock) before answering.',
   properties: [
     ...providerProps,

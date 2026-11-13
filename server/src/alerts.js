@@ -46,7 +46,7 @@ function compose(workflow, error, { suppressed = 0, test = false } = {}) {
     return { subject: `Test alert from LiteForeFlow`, text: `This is a test alert for "${workflow.name}".\nIf you can read this, failure alerts for this workflow are set up correctly.\nOpen it: ${link}` };
   }
   const lines = [
-    `⚠️ "${workflow.name}" failed`,
+    `"${workflow.name}" failed`,
     error?.nodeName ? `Step: ${error.nodeName}` : null,
     `Problem: ${clip(error?.message ?? 'Unknown error', 400)}`,
     `When: ${new Date().toISOString().replace('T', ' ').slice(0, 19)} UTC`,

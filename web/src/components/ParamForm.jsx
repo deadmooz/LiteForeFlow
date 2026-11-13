@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { X, Check, TriangleAlert, Plus } from 'lucide-react';
 import { api } from '../api.js';
 import { Modal } from './common.jsx';
 import { SchedulePicker, TimezoneSelect } from './SchedulePicker.jsx';
@@ -85,7 +86,7 @@ export function CredentialModal({ typeId, onClose, onSaved, existing }) {
         {def && (
           <div className="row gap wrap">
             <button type="button" onClick={runTest} disabled={test?.busy}>{test?.busy ? 'Testing…' : 'Test connection'}</button>
-            {test && !test.busy && <span className={`test-result ${test.ok ? (test.warn || test.untested ? 'warn' : 'ok') : 'bad'}`} role="status">{test.ok ? (test.warn || test.untested ? '⚠ ' : '✓ ') : '✕ '}{test.message}</span>}
+            {test && !test.busy && <span className={`test-result ${test.ok ? (test.warn || test.untested ? 'warn' : 'ok') : 'bad'}`} role="status">{test.ok ? (test.warn || test.untested ? <TriangleAlert size={13} aria-hidden="true" /> : <Check size={13} aria-hidden="true" />) : <X size={13} aria-hidden="true" />} {test.message}</span>}
           </div>
         )}
         {error && <div className="error">{error}</div>}
@@ -110,7 +111,7 @@ export function CredentialSelect({ prop, value, onChange, values, credentials, r
         <option value="">{prop.required ? 'Select credential…' : 'None'}</option>
         {matching.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
-      <button type="button" onClick={() => setCreating(true)}>＋ New</button>
+      <button type="button" onClick={() => setCreating(true)}><Plus size={14} aria-hidden="true" /> New</button>
       {creating && (
         <CredentialModal
           typeId={types.length === 1 ? types[0] : types}
@@ -131,10 +132,10 @@ function KeyValue({ value, onChange }) {
         <div className="row gap" key={i}>
           <input placeholder="field" value={r.name ?? ''} onChange={(e) => update(i, { name: e.target.value })} />
           <input placeholder="value or {{ expression }}" value={r.value ?? ''} onChange={(e) => update(i, { value: e.target.value })} />
-          <button type="button" className="icon" aria-label="Remove" onClick={() => onChange(rows.filter((_, idx) => idx !== i))}>✕</button>
+          <button type="button" className="icon" aria-label="Remove" onClick={() => onChange(rows.filter((_, idx) => idx !== i))}><X size={14} aria-hidden="true" /></button>
         </div>
       ))}
-      <button type="button" onClick={() => onChange([...rows, { name: '', value: '' }])}>＋ Add field</button>
+      <button type="button" onClick={() => onChange([...rows, { name: '', value: '' }])}><Plus size={14} aria-hidden="true" /> Add field</button>
     </div>
   );
 }
@@ -151,10 +152,10 @@ function Conditions({ value, onChange }) {
             {OPERATORS.map((o) => <option key={o}>{o}</option>)}
           </select>
           {!NO_RIGHT.has(r.op) && <input placeholder="value" value={r.right ?? ''} onChange={(e) => update(i, { right: e.target.value })} />}
-          <button type="button" className="icon" aria-label="Remove" onClick={() => onChange(rows.filter((_, idx) => idx !== i))}>✕</button>
+          <button type="button" className="icon" aria-label="Remove" onClick={() => onChange(rows.filter((_, idx) => idx !== i))}><X size={14} aria-hidden="true" /></button>
         </div>
       ))}
-      <button type="button" onClick={() => onChange([...rows, { left: '', op: 'equals', right: '' }])}>＋ Add condition</button>
+      <button type="button" onClick={() => onChange([...rows, { left: '', op: 'equals', right: '' }])}><Plus size={14} aria-hidden="true" /> Add condition</button>
     </div>
   );
 }

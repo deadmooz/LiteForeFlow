@@ -34,3 +34,6 @@ prof/
 
 # Build output (the Docker image builds it from source)
 web/dist/
+
+# Local launcher
+start.bat

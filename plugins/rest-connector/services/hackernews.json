@@ -1,7 +1,7 @@
 {
   "id": "hackernews",
   "name": "Hacker News",
-  "icon": "🟧",
+  "icon": "Newspaper",
   "description": "Read stories, comments and users from Hacker News. No account needed.",
   "baseUrl": "https://hacker-news.firebaseio.com/v0",
   "auth": { "type": "none" },

@@ -1,7 +1,7 @@
 {
   "id": "trello",
   "name": "Trello",
-  "icon": "📋",
+  "icon": "Kanban",
   "description": "List boards and cards, and create cards on any list.",
   "baseUrl": "https://api.trello.com/1",
   "auth": {
