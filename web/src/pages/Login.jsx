@@ -23,8 +23,7 @@ export default function Login({ onAuthed }) {
   return (
     <div className="center">
       <form className="card auth-card" onSubmit={submit}>
-        <h1>{mode === 'login' ? 'Welcome back' : 'Let us get you set up'}</h1>
-        <p className="hello-sub">{mode === 'login' ? 'Sign in to pick up where you left off.' : 'Create an account. It takes under a minute.'}</p>
+        <h1>{mode === 'login' ? 'Sign in' : 'Create account'}</h1>
         {mode === 'signup' && (
           <label>Name<input value={form.name} onChange={set('name')} autoComplete="name" /></label>
         )}

@@ -14,7 +14,7 @@ const apiError = (e, pick) => {
 
 /* ----------------------------------- Slack ------------------------------------ */
 defineNode({
-  type: 'app.slack', name: 'Slack', group: 'app', icon: '💬', credentialType: 'slackApi',
+  type: 'app.slack', name: 'Slack', group: 'app', icon: 'MessageSquare', credentialType: 'slackApi',
   description: 'Post a message to a Slack channel.',
   properties: [
     credentialProperty('slackApi'),
@@ -31,7 +31,7 @@ defineNode({
 
 /* ---------------------------------- Telegram ---------------------------------- */
 defineNode({
-  type: 'app.telegram', name: 'Telegram', group: 'app', icon: '✈️', credentialType: 'telegramApi',
+  type: 'app.telegram', name: 'Telegram', group: 'app', icon: 'Send', credentialType: 'telegramApi',
   description: 'Send a Telegram message from your bot.',
   properties: [
     credentialProperty('telegramApi'),
@@ -51,7 +51,7 @@ defineNode({
 
 /* ----------------------------------- Discord ---------------------------------- */
 defineNode({
-  type: 'app.discord', name: 'Discord', group: 'app', icon: '🎮', credentialType: 'discordWebhook',
+  type: 'app.discord', name: 'Discord', group: 'app', icon: 'Gamepad2', credentialType: 'discordWebhook',
   description: 'Post a message to a Discord channel via webhook.',
   properties: [
     credentialProperty('discordWebhook'),
@@ -108,7 +108,7 @@ async function notionSchema(token, databaseId, { fresh = false } = {}) {
 }
 
 defineNode({
-  type: 'app.notion', name: 'Notion', group: 'app', icon: '📓', credentialType: 'notionApi',
+  type: 'app.notion', name: 'Notion', group: 'app', icon: 'NotebookText', credentialType: 'notionApi',
   description: 'Add rows to a Notion database or read them. Pick the database and fill in its columns - no IDs or JSON to write.',
   properties: [
     credentialProperty('notionApi'),
@@ -178,7 +178,7 @@ defineNode({
 
 /* ---------------------------------- Airtable ---------------------------------- */
 defineNode({
-  type: 'app.airtable', name: 'Airtable', group: 'app', icon: '🗂️', credentialType: 'airtableApi',
+  type: 'app.airtable', name: 'Airtable', group: 'app', icon: 'Table2', credentialType: 'airtableApi',
   description: 'Create or list Airtable records.',
   properties: [
     credentialProperty('airtableApi'),
@@ -206,7 +206,7 @@ defineNode({
 
 /* ----------------------------------- Stripe ----------------------------------- */
 defineNode({
-  type: 'app.stripe', name: 'Stripe', group: 'app', icon: '💳', credentialType: 'stripeApi',
+  type: 'app.stripe', name: 'Stripe', group: 'app', icon: 'CreditCard', credentialType: 'stripeApi',
   description: 'List or create customers, list recent payments.',
   properties: [
     credentialProperty('stripeApi'),
@@ -236,7 +236,7 @@ defineNode({
 
 /* ----------------------------------- HubSpot ---------------------------------- */
 defineNode({
-  type: 'app.hubspot', name: 'HubSpot', group: 'app', icon: '🧲', credentialType: 'hubspotApi',
+  type: 'app.hubspot', name: 'HubSpot', group: 'app', icon: 'Magnet', credentialType: 'hubspotApi',
   description: 'Create or search HubSpot contacts.',
   properties: [
     credentialProperty('hubspotApi'),
@@ -267,7 +267,7 @@ defineNode({
 
 /* ---------------------------------- Postgres ---------------------------------- */
 defineNode({
-  type: 'app.postgres', name: 'Postgres', group: 'app', icon: '🐘', credentialType: 'postgres',
+  type: 'app.postgres', name: 'Postgres', group: 'app', icon: 'Database', credentialType: 'postgres',
   description: 'Run a SQL query. Use $1, $2… placeholders with the parameters array — never paste values into SQL.',
   properties: [
     credentialProperty('postgres'),
@@ -298,7 +298,7 @@ defineNode({
 
 /* ----------------------------------- Email ------------------------------------ */
 defineNode({
-  type: 'app.email', name: 'Send Email (SMTP)', group: 'app', icon: '📧', credentialType: 'smtp',
+  type: 'app.email', name: 'Send Email (SMTP)', group: 'app', icon: 'Mail', credentialType: 'smtp',
   description: 'Send an email through any SMTP server (Gmail app password, SES, Mailgun, …).',
   properties: [
     credentialProperty('smtp'),

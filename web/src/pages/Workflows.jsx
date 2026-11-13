@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { SearchX, Plus } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, fmtAgo, fmtDate, firstName, greeting } from '../api.js';
-import { useSession } from '../App.jsx';
+import { api, fmtAgo, fmtDate } from '../api.js';
 import { EmptyState, ErrorState, Loading, Modal } from '../components/common.jsx';
 import { useDebounced, useSlashFocus } from '../hooks.js';
 
@@ -33,7 +33,6 @@ export default function Workflows() {
   const [list, setList] = useState(null);
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
-  const { me } = useSession();
   const [query, setQuery] = useState('');
   const q = useDebounced(query, 200).trim().toLowerCase();
   const searchRef = useSlashFocus();
@@ -47,13 +46,6 @@ export default function Workflows() {
     });
     setError('');
   }).catch((e) => setError(e.message));
-  const summary = useMemo(() => {
-    if (!list) return 'Here is what is running.';
-    if (list.length === 0) return 'Nothing here yet. Let us build your first one.';
-    const on = list.filter((w) => w.active).length;
-    if (on === 0) return `You have ${list.length} workflow${list.length === 1 ? '' : 's'}, and none are switched on yet.`;
-    return `${on} of your ${list.length} workflow${list.length === 1 ? ' is' : 's are'} switched on and doing the work for you.`;
-  }, [list]);
   const shown = useMemo(() => (q && list ? list.filter((w) => w.name.toLowerCase().includes(q)) : list), [list, q]);
   useEffect(() => { load(); }, []);
 
@@ -74,8 +66,7 @@ export default function Workflows() {
     <div className="page">
       <div className="page-head">
         <div className="hello">
-          <h1>{greeting()}, <span className="name">{firstName(me?.user)}</span></h1>
-          <p>{summary}</p>
+          <h1>Workflows</h1>
         </div>
         <div className="toolbar">
           {list?.length > 4 && (
@@ -85,16 +76,16 @@ export default function Workflows() {
           )}
           <button onClick={() => setImporting(true)}>Import from n8n</button>
           <Link to="/templates"><button>Browse templates</button></Link>
-          <button className="primary" onClick={create}>＋ New workflow</button>
+          <button className="primary" onClick={create}><Plus size={14} aria-hidden="true" /> New workflow</button>
         </div>
       </div>
       {error && list && <div className="error" role="alert">{error}</div>}
       {!list ? (error ? <ErrorState message={error} onRetry={() => { setError(''); load(); }} /> : <Loading rows={6} />) : shown.length === 0 && list.length > 0 ? (
-        <EmptyState icon="⌕" title="No match">No workflow is called “{query}”.</EmptyState>
+        <EmptyState icon={<SearchX size={20} strokeWidth={1.75} />} title="No match">No workflow is called “{query}”.</EmptyState>
       ) : list.length === 0 ? (
         <div className="card empty">
-          <h3>Your first workflow is a few clicks away</h3>
-          <p className="muted">Pick a template to see how it works, bring one over from n8n, or start with a blank canvas.</p>
+          <h3>No workflows yet</h3>
+          <p className="muted">Start from a template, import an n8n workflow, or create a blank one.</p>
           <div className="row gap center-x">
             <Link to="/templates"><button className="primary">Browse templates</button></Link>
             <button onClick={create}>Start from scratch</button>

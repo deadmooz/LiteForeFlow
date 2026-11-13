@@ -28,7 +28,7 @@ export const templates = [
     definition: flow([
       cronAt('0 9 * * 1-5'),
       n('h', 'http.request', 'Fetch data', { url: 'https://api.github.com/repos/n8n-io/n8n', method: 'GET' }),
-      n('s', 'app.slack', 'Slack', { channel: '#general', text: '⭐ {{ $json.full_name }} has {{ $json.stargazers_count }} stars' }),
+      n('s', 'app.slack', 'Slack', { channel: '#general', text: '{{ $json.full_name }} has {{ $json.stargazers_count }} stars' }),
     ]),
   },
   {
@@ -36,7 +36,7 @@ export const templates = [
     description: 'Post every new blog or news entry to a Discord channel.',
     definition: flow([
       n('t', 'trigger.rss', 'RSS Feed', { url: 'https://hnrss.org/frontpage', intervalMinutes: 15 }),
-      n('d', 'app.discord', 'Discord', { content: '📰 {{ $json.title }}\n{{ $json.link }}' }),
+      n('d', 'app.discord', 'Discord', { content: '{{ $json.title }}\n{{ $json.link }}' }),
     ]),
   },
   {
@@ -46,7 +46,7 @@ export const templates = [
       [
         webhook('new-lead', { samplePayload: '{ "body": { "name": "Ada", "email": "ada@example.com" } }' }),
         n('a', 'app.airtable', 'Airtable', { operation: 'createRecord', fields: '{"Name": "{{ $json.body.name }}", "Email": "{{ $json.body.email }}"}' }, at(380, 60)),
-        n('g', 'app.telegram', 'Telegram', { text: '🎯 New lead: {{ $json.body.name }} ({{ $json.body.email }})' }, at(380, 260)),
+        n('g', 'app.telegram', 'Telegram', { text: 'New lead: {{ $json.body.name }} ({{ $json.body.email }})' }, at(380, 260)),
       ],
       [link('t', 'a'), link('t', 'g')],
     ),
@@ -71,7 +71,7 @@ export const templates = [
           prompt: '{{ $json.body.message }}', parseJson: true,
         }),
         n('i', 'logic.if', 'Urgent?', { conditions: [{ left: '{{ $json.parsed.urgent }}', op: 'isTrue', right: '' }], combine: 'all' }),
-        n('s', 'app.slack', 'Alert Slack', { channel: '#support', text: '🚨 {{ $json.parsed.summary }}' }),
+        n('s', 'app.slack', 'Alert Slack', { channel: '#support', text: 'Urgent: {{ $json.parsed.summary }}' }),
       ],
       [link('t', 'l'), link('l', 'i'), link('i', 's', 0)],
     ),
@@ -129,7 +129,7 @@ export const templates = [
     description: 'Set this as another workflow\'s Error workflow to get a Slack message when it fails.',
     definition: flow([
       n('t', 'trigger.error', 'Error Trigger'),
-      n('s', 'app.slack', 'Slack', { channel: '#ops', text: '❌ "{{ $json.workflow.name }}" failed at {{ $json.error.nodeName }}: {{ $json.error.message }}' }),
+      n('s', 'app.slack', 'Slack', { channel: '#ops', text: '"{{ $json.workflow.name }}" failed at {{ $json.error.nodeName }}: {{ $json.error.message }}' }),
     ]),
   },
   {

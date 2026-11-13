@@ -7,7 +7,7 @@ export function register(sdk) {
     type: '__ID_TYPE__.hello',
     name: 'Say Hello',
     group: 'app',            // where it sits in the palette: trigger | core | logic | data | ai | app
-    icon: '👋',
+    icon: 'Puzzle',
     description: 'Adds a greeting to every item. Replace me with something useful.',
 
     // The settings the user fills in. Types: string, text, number, boolean, options, json, code, keyvalue, conditions.

@@ -7,12 +7,14 @@ import {
 import '@xyflow/react/dist/style.css';
 import { api } from '../api.js';
 import ParamForm, { effectiveParams } from '../components/ParamForm.jsx';
-import { NodeResult, StatusBadge } from '../components/common.jsx';
+import { ArrowLeft, Undo2, Redo2, WandSparkles, PanelLeft, Plus, Play, Settings, Trash2 } from 'lucide-react';
+import { NodeResult, StatusBadge, Modal } from '../components/common.jsx';
+import { NodeIcon } from '../icons.jsx';
 import AlertSettings from '../components/AlertSettings.jsx';
 import InsertPicker from '../components/InsertPicker.jsx';
-import { nodeTypes, ConnectionLine, suggestion, outputCount, toRF, toEdge } from '../components/FlowNode.jsx';
+import { nodeTypes, ConnectionLine, suggestion, outputCount, toRF, toEdge, NODE_W, sizeOf } from '../components/FlowNode.jsx';
 import { useUndoRedo } from '../useUndoRedo.js';
-import { useStoredFlag } from '../hooks.js';
+import { useStoredFlag, useStoredNumber } from '../hooks.js';
 import { copyPayload, parseClip, clonePaste, findInsertTarget, planInsert, rewire, edgeMidpoint, nearestConnectTarget, handlePoint, handleIndex, tidyLayout } from '../flow.js';
 
 const GROUPS = [['trigger', 'Triggers'], ['core', 'Core'], ['logic', 'Logic'], ['data', 'Data'], ['ai', 'AI'], ['app', 'Apps']];
@@ -46,9 +48,11 @@ function EditorInner() {
   const [results, setResults] = useState({}); // nodeId -> result from last run
   const [lastRun, setLastRun] = useState(null);
   const [search, setSearch] = useState('');
-  const [palHidden, togglePalette] = useStoredFlag('ff_hide_palette'); // the node list and the settings panel can be folded away (wide screens)
-  const [panelHidden, togglePanel] = useStoredFlag('ff_hide_panel');
-  const [drawer, setDrawer] = useState(null); // 'palette' | 'panel' | null — only used on narrow screens
+  const [palHidden, togglePalette] = useStoredFlag('ff_hide_palette'); // the node list can be folded away (wide screens)
+  const [palW, setPalW] = useStoredNumber('ff_palette_w', 220, 200, 380);
+  const [drawer, setDrawer] = useState(null); // 'palette' | null: the node list as a drawer on narrow screens
+  const [editingId, setEditingId] = useState(null); // the step whose editor window is open
+  const [showSettings, setShowSettings] = useState(false); // the workflow settings window
   const [loaded, setLoaded] = useState(false);
   const [candidate, setCandidate] = useState(null); // id of the line a step would be inserted into while it is dragged
   const [plus, setPlus] = useState(null); // { edgeId, x, y }: the + button on a hovered line
@@ -61,6 +65,8 @@ function EditorInner() {
 
   const typeMap = useMemo(() => Object.fromEntries(types.map((t) => [t.type, t])), [types]);
   nodesRef.current = nodes; edgesRef.current = edges;
+  const editingRef = useRef(null); editingRef.current = editingId;
+  useEffect(() => { if (editingId && !nodes.some((n) => n.id === editingId)) setEditingId(null); }, [nodes, editingId]); // deleted or undone while open
 
   const reloadCredentials = useCallback(() => api('/credentials').then(setCredentials), []);
 
@@ -167,13 +173,14 @@ function EditorInner() {
     }
     setSelectedId(node.id);
     setTab('params');
-    setDrawer('panel');
+    setEditingId(node.id);
+    setDrawer(null);
     markDirty();
   };
 
   /* ---- insert a step onto a line: the line is split in two, the steps after it move over to make room ---- */
   const boxesOf = (list) => Object.fromEntries(list.map((n) => [n.id, {
-    x: n.position.x, y: n.position.y, w: n.measured?.width ?? 190, h: n.measured?.height ?? 56,
+    x: n.position.x, y: n.position.y, w: n.measured?.width ?? NODE_W, h: n.measured?.height ?? sizeOf(n.data.node, n.data.def).h,
     ins: n.data.def.inputs ?? 1, outs: outputCount(n.data.node, n.data.def),
   }]));
   const canInsert = (def) => !!def && (def.inputs ?? 1) > 0 && (def.outputs ?? 1) > 0 && !def.isTrigger;
@@ -187,8 +194,8 @@ function EditorInner() {
     const created = def ? makeNode(def, { x: 0, y: 0 }) : null;
     const id = created?.id ?? existingId;
     const here = ns.find((n) => n.id === id);
-    // A step that was just created has not been measured yet; its width follows its name (the card is 170 to 230 wide).
-    const size = here?.measured ? { w: here.measured.width, h: here.measured.height } : { w: Math.max(170, Math.min(230, 100 + (created?.name.length ?? 8) * 7)), h: 56 };
+    // A step that was just created has not been measured yet: every step has the same width and a height that follows its handles.
+    const size = here?.measured ? { w: here.measured.width, h: here.measured.height } : created ? sizeOf(created, def) : { w: NODE_W, h: 52 };
     const plan = planInsert({ edge, boxes: boxesOf(ns), size, edges: es });
     if (!plan) return;
     const moved = new Set(plan.shifted);
@@ -200,7 +207,7 @@ function EditorInner() {
     setEdges((cur) => rewire(cur, edge, id));
     setTimeout(() => setNodes((cur) => cur.map((n) => (n.className === 'ff-settle' ? { ...n, className: undefined } : n))), 350);
     const nameOf = (nid) => ns.find((n) => n.id === nid)?.data.node.name ?? 'step';
-    if (created) { setSelectedId(id); setTab('params'); setDrawer('panel'); }
+    if (created) { setSelectedId(id); setTab('params'); setEditingId(id); }
     setMessage({ kind: 'ok', text: `Inserted between ${nameOf(edge.source)} and ${nameOf(edge.target)}`, undo: true });
     markDirty();
   };
@@ -259,6 +266,7 @@ function EditorInner() {
     const onKey = (e) => {
       const k = keys.current; const key = e.key.toLowerCase(); const mod = e.ctrlKey || e.metaKey;
       if (e.key === 'Escape') { k.cancelInsert(); setPicker(null); setPlus(null); return; }
+      if (editingRef.current) return; // a step's window is open: these keys are not for the canvas behind it
       if (editing(e.target)) return; // inside a text box, these keys belong to the text
       if (mod && key === 'z' && !e.shiftKey) { e.preventDefault(); k.undo(); }
       else if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) { e.preventDefault(); k.redo(); }
@@ -269,10 +277,14 @@ function EditorInner() {
       else if (e.key === 'Enter') {
         const edge = edgesRef.current.find((x) => x.selected);
         if (edge) { e.preventDefault(); openPickerAt(edge.id); }
+        else if (!/^(BUTTON|A)$/.test(e.target?.tagName)) { // Enter on the one selected step opens its window
+          const one = nodesRef.current.filter((n) => n.selected);
+          if (one.length === 1) { e.preventDefault(); setTab('params'); setSelectedId(one[0].id); setEditingId(one[0].id); }
+        }
       }
     };
     const onPaste = (e) => {
-      if (editing(e.target)) return;
+      if (editing(e.target) || editingRef.current) return;
       const text = e.clipboardData?.getData('text/plain') ?? '';
       const payload = parseClip(text) ?? (!text.trim() ? clipRef.current : null);
       if (payload) { e.preventDefault(); keys.current.pasteSteps(payload); }
@@ -316,7 +328,7 @@ function EditorInner() {
     const d = dragRef.current;
     if (!d || d.id !== node.id) return;
     if (!d.free || !d.eligible || d.cancelled || e.altKey) { setTarget(null); return; } // Alt turns snapping off for this drag
-    const w = node.measured?.width ?? 190; const h = node.measured?.height ?? 56;
+    const w = node.measured?.width ?? NODE_W; const h = node.measured?.height ?? sizeOf(node.data.node, node.data.def).h;
     setTarget(findTarget({ x: node.position.x + w / 2, y: node.position.y + h / 2 }, new Set([node.id])));
   };
   const onNodeDragStop = (e, node) => {
@@ -379,7 +391,7 @@ function EditorInner() {
     const list = nodesRef.current;
     if (list.length < 2) return;
     const positions = tidyLayout({
-      nodes: list.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, w: n.measured?.width ?? 190, h: n.measured?.height ?? 56 })),
+      nodes: list.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y, w: n.measured?.width ?? NODE_W, h: n.measured?.height ?? sizeOf(n.data.node, n.data.def).h })),
       edges: serializeRef.current().connections.map((c) => ({ from: c.from, to: c.to, fromOutput: c.fromOutput ?? 0 })),
     });
     setNodes((cur) => cur.map((n) => (positions.has(n.id) ? { ...n, position: positions.get(n.id), className: 'ff-settle' } : n)));
@@ -433,13 +445,13 @@ function EditorInner() {
     setDirty(true);
   }, [setEdges]);
 
-  const selected = nodes.find((n) => n.id === selectedId);
+  const editing = nodes.find((n) => n.id === editingId);
   const updateNode = (patch) => {
-    setNodes((ns) => ns.map((n) => (n.id === selectedId ? { ...n, data: { ...n.data, node: { ...n.data.node, ...patch } } } : n)));
+    setNodes((ns) => ns.map((n) => (n.id === editingId ? { ...n, data: { ...n.data, node: { ...n.data.node, ...patch } } } : n)));
     markDirty();
   };
   const rename = (name) => {
-    const clash = nodes.some((n) => n.id !== selectedId && n.data.node.name === name);
+    const clash = nodes.some((n) => n.id !== editingId && n.data.node.name === name);
     updateNode({ name });
     if (clash) setMessage({ kind: 'error', text: 'Node names must be unique — expressions refer to nodes by name.' });
   };
@@ -460,8 +472,8 @@ function EditorInner() {
   const testStep = async () => {
     setBusy('test');
     try {
-      const r = await api(`/workflows/${id}/nodes/${selectedId}/test`, { method: 'POST', body: { definition: serialize() } });
-      setResults((prev) => ({ ...prev, [selectedId]: r.result ?? { status: 'error', error: r.error?.message } }));
+      const r = await api(`/workflows/${id}/nodes/${editingId}/test`, { method: 'POST', body: { definition: serialize() } });
+      setResults((prev) => ({ ...prev, [editingId]: r.result ?? { status: 'error', error: r.error?.message } }));
       setTab('output');
     } catch (e) { fail(e); } finally { setBusy(''); }
   };
@@ -475,11 +487,27 @@ function EditorInner() {
     } catch (e) { fail(e); }
   };
 
-  const deleteSelected = () => {
-    setNodes((ns) => ns.filter((n) => n.id !== selectedId));
-    setEdges((es) => es.filter((e) => e.source !== selectedId && e.target !== selectedId));
-    setSelectedId(null);
+  const deleteEditing = () => {
+    const gone = editingId;
+    setEditingId(null); setSelectedId(null);
+    setNodes((ns) => ns.filter((n) => n.id !== gone));
+    setEdges((es) => es.filter((e) => e.source !== gone && e.target !== gone));
     markDirty();
+  };
+
+  // Dragging the thin strip on the node list's right edge (or its arrow keys) sets the list's width; it is remembered when the drag ends.
+  const startResize = (e) => {
+    const el = e.currentTarget; const left = el.previousElementSibling.getBoundingClientRect().left;
+    el.classList.add('dragging'); document.body.classList.add('resizing');
+    let w = palW;
+    // listening on the window means the drag keeps working when the pointer leaves the thin strip or the page
+    const move = (ev) => { w = ev.clientX - left; setPalW(w, false); };
+    const end = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end); el.classList.remove('dragging'); document.body.classList.remove('resizing'); setPalW(w); };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
+  };
+  const resizeKey = (e) => {
+    const next = { ArrowLeft: palW - 16, ArrowRight: palW + 16, Home: 200, End: 380 }[e.key];
+    if (next !== undefined) { e.preventDefault(); setPalW(next); }
   };
 
   const copySecret = (v) => (navigator.clipboard?.writeText(v) ?? Promise.reject()).then(() => setMessage({ kind: 'ok', text: 'Secret copied' }), () => window.prompt('Copy the secret:', v));
@@ -497,7 +525,7 @@ function EditorInner() {
   const nearHint = near ? (() => {
     const n = nodes.find((x) => x.id === near.id);
     if (!n || !wrapper.current) return null;
-    const sp = rf.flowToScreenPosition({ x: n.position.x + (n.measured?.width ?? 190) / 2, y: n.position.y });
+    const sp = rf.flowToScreenPosition({ x: n.position.x + (n.measured?.width ?? NODE_W) / 2, y: n.position.y });
     const r = wrapper.current.getBoundingClientRect();
     return { x: Math.round(sp.x - r.left), y: Math.round(sp.y - r.top), text: `Release to connect to ${n.data.node.name}` };
   })() : null;
@@ -511,23 +539,22 @@ function EditorInner() {
   return (
     <div className="editor">
       <header className="editor-bar">
-        <button className="link" onClick={() => navigate('/')}>← Workflows</button>
+        <button className="link" onClick={() => navigate('/')}><ArrowLeft size={14} aria-hidden="true" /> Workflows</button>
         <input
           className="title-input" value={meta.name} aria-label="Workflow name"
           onChange={(e) => { setMeta({ ...meta, name: e.target.value }); markDirty(); }}
         />
-        <button className="icon" onClick={undo} disabled={!history.canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
-        <button className="icon" onClick={redo} disabled={!history.canRedo} title="Redo (Ctrl+Shift+Z)" aria-label="Redo">↷</button>
-        <button onClick={tidyUp} disabled={nodes.length < 2} title="Tidy up: lay the steps out neatly from left to right">✨ Tidy up</button>
+        <button className="icon" onClick={undo} disabled={!history.canUndo} title="Undo (Ctrl+Z)" aria-label="Undo"><Undo2 size={16} aria-hidden="true" /></button>
+        <button className="icon" onClick={redo} disabled={!history.canRedo} title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><Redo2 size={16} aria-hidden="true" /></button>
+        <button onClick={tidyUp} disabled={nodes.length < 2} title="Tidy up: lay the steps out neatly from left to right"><WandSparkles size={14} aria-hidden="true" /> Tidy up</button>
         {dirty && <span className="muted small">Unsaved changes</span>}
-        <button className="mobile-only" onClick={() => setDrawer((d) => (d === 'palette' ? null : 'palette'))}>＋ Nodes</button>
-        <button className="mobile-only" onClick={() => setDrawer((d) => (d === 'panel' ? null : 'panel'))}>Settings</button>
+        <button className="mobile-only" onClick={() => setDrawer((d) => (d === 'palette' ? null : 'palette'))}><Plus size={14} aria-hidden="true" /> Nodes</button>
         <div className="spacer" />
-        <button className="icon desktop-only" onClick={togglePalette} aria-pressed={!palHidden} title={palHidden ? 'Show the node list' : 'Hide the node list'} aria-label="Toggle the node list">◧</button>
-        <button className="icon desktop-only" onClick={togglePanel} aria-pressed={!panelHidden} title={panelHidden ? 'Show the settings panel' : 'Hide the settings panel'} aria-label="Toggle the settings panel">◨</button>
+        <button className="icon desktop-only" onClick={togglePalette} aria-pressed={!palHidden} title={palHidden ? 'Show the node list' : 'Hide the node list'} aria-label="Toggle the node list"><PanelLeft size={16} aria-hidden="true" /></button>
+        <button className="icon" onClick={() => setShowSettings(true)} title="Workflow settings" aria-label="Workflow settings"><Settings size={16} aria-hidden="true" /></button>
         {message && <span className={message.kind === 'error' ? 'error inline-msg' : 'ok inline-msg'} role="status">{message.text}{message.undo && <> · <button className="link" onClick={() => { undo(); setMessage(null); }}>Undo</button></>}</span>}
         <button onClick={save} disabled={!!busy || !dirty}>{busy === 'save' ? 'Saving…' : 'Save'}</button>
-        <button className="primary" onClick={run} disabled={!!busy}>{busy === 'run' ? 'Running…' : '▶ Run'}</button>
+        <button className="primary" onClick={run} disabled={!!busy}>{busy === 'run' ? 'Running…' : <><Play size={14} aria-hidden="true" /> Run</>}</button>
         <label className="switch" title="Active workflows respond to webhooks and schedules">
           <input type="checkbox" checked={meta.active} onChange={toggleActive} disabled={!!busy} />
           <span>{meta.active ? 'Active' : 'Inactive'}</span>
@@ -546,7 +573,7 @@ function EditorInner() {
       )}
 
       <div className="editor-body">
-        <aside className={`palette ${drawer === 'palette' ? 'open' : ''} ${palHidden ? 'collapsed' : ''}`}>
+        <aside className={`palette ${drawer === 'palette' ? 'open' : ''} ${palHidden ? 'collapsed' : ''}`} style={{ '--pal-w': `${palW}px` }}>
           <input placeholder="Search nodes…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search nodes" />
           {GROUPS.map(([g, label]) => {
             const items = filtered.filter((t) => t.group === g);
@@ -561,13 +588,20 @@ function EditorInner() {
                     onDragEnd={() => { paletteType.current = null; setTarget(null); }}
                     onClick={() => addAtCenter(t)}
                   >
-                    <span>{t.icon}</span> {t.name}
+                    <NodeIcon name={t.icon} /> {t.name}
                   </button>
                 ))}
               </div>
             );
           })}
         </aside>
+        {!palHidden && (
+          <div
+            className="palette-resizer" role="separator" aria-orientation="vertical" aria-label="Resize the node list" tabIndex={0}
+            aria-valuemin={200} aria-valuemax={380} aria-valuenow={palW}
+            onPointerDown={startResize} onKeyDown={resizeKey} onDoubleClick={() => setPalW(220)}
+          />
+        )}
 
         <div className="canvas" ref={wrapper} onDrop={onDrop} onDragOver={onDragOver} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setTarget(null); }}>
           <ReactFlow
@@ -579,7 +613,9 @@ function EditorInner() {
             onNodesChange={(c) => { onNodesChange(c); if (c.some((x) => x.type === 'position' && x.dragging === false)) markDirty(); if (c.some((x) => x.type === 'remove')) markDirty(); }}
             onEdgesChange={(c) => { onEdgesChange(c); if (c.some((x) => x.type === 'remove')) markDirty(); }}
             onConnect={onConnect}
-            onNodeClick={(_, n) => { setSelectedId(n.id); setDrawer('panel'); }}
+            onNodeClick={(_, n) => { if (selectedId === n.id && window.matchMedia?.('(pointer: coarse)').matches) setEditingId(n.id); setSelectedId(n.id); }}
+            onNodeDoubleClick={(_, n) => { setNodes((cur) => cur.map((x) => ({ ...x, selected: x.id === n.id }))); setSelectedId(n.id); setTab('params'); setEditingId(n.id); }}
+            zoomOnDoubleClick={false}
             onPaneClick={() => { setSelectedId(null); setDrawer(null); setPicker(null); }}
             deleteKeyCode={['Backspace', 'Delete']}
             fitView proOptions={{ hideAttribution: true }}
@@ -594,114 +630,108 @@ function EditorInner() {
           {plus && !picker && (
             <button className="insert-plus" style={{ left: plus.x, top: plus.y }} aria-label="Add a step here" title="Add a step here"
               onMouseEnter={() => { overPlus.current = true; clearTimeout(plusTimer.current); }} onMouseDown={() => { overPlus.current = true; clearTimeout(plusTimer.current); }}
-              onMouseLeave={() => { overPlus.current = false; hidePlusSoon(); }} onClick={() => openPickerAt(plus.edgeId)}>+</button>
+              onMouseLeave={() => { overPlus.current = false; hidePlusSoon(); }} onClick={() => openPickerAt(plus.edgeId)}><Plus size={14} aria-hidden="true" /></button>
           )}
           {picker && (
             <InsertPicker types={insertable} x={picker.x} y={picker.y} onClose={() => setPicker(null)}
               onPick={(def) => { const id = picker.edgeId; setPicker(null); insertOnEdge(id, null, def); }} />
           )}
           {picked > 1 && <div className="select-hint" role="status">{picked} steps selected · <kbd>Ctrl</kbd>+<kbd>C</kbd> copy · <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicate · <kbd>Delete</kbd> remove</div>}
-          {nodes.length === 0 && <div className="canvas-empty">Add a trigger from the left to get started →</div>}
+          {nodes.length === 0 && <div className="canvas-empty">Add a trigger from the node list.</div>}
           {lastRun && (
             <div className="run-summary">
               <StatusBadge status={lastRun.status} /> Last run: {Object.values(lastRun.results).filter((r) => r.status === 'success').length} nodes succeeded
-              {lastRun.error && <> · <button className="link" onClick={() => { setSelectedId(lastRun.error.nodeId); setTab('output'); }}>show error</button></>}
+              {lastRun.error && <> · <button className="link" onClick={() => { setSelectedId(lastRun.error.nodeId); setTab('output'); setEditingId(lastRun.error.nodeId); }}>show error</button></>}
             </div>
           )}
         </div>
 
-        <aside className={`panel ${drawer === 'panel' ? 'open' : ''} ${panelHidden ? 'collapsed' : ''}`}>
-          {selected ? (
+      </div>
+
+      {editing && (
+        <Modal
+          className="node" title={editing.data.node.name} onClose={() => setEditingId(null)}
+          head={(
             <>
-              <div className="panel-head">
-                <span className="panel-icon">{selected.data.def.icon}</span>
-                <input value={selected.data.node.name} onChange={(e) => rename(e.target.value)} aria-label="Node name" />
-                <button className="icon" title="Delete node" onClick={deleteSelected} aria-label="Delete node">🗑</button>
-              </div>
-              <p className="muted small">{selected.data.def.description}</p>
-              <div className="tabs" role="tablist">
-                {[['params', 'Parameters'], ['output', 'Data'], ['settings', 'Settings']].map(([k, label]) => (
-                  <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{label}</button>
-                ))}
-              </div>
-              {tab === 'params' && (
-                <>
-                  <ParamForm
-                    typeDef={selected.data.def} params={selected.data.node.parameters}
-                    onChange={(parameters) => updateNode({ parameters })}
-                    credentials={credentials} reloadCredentials={reloadCredentials}
-                  />
-                  {!selected.data.def.isTrigger && (
-                    <button className="test-btn" onClick={testStep} disabled={!!busy}>{busy === 'test' ? 'Testing…' : '▶ Test this step'}</button>
-                  )}
-                  <p className="muted small">Use <code>{'{{ $json.field }}'}</code> for the current item or <code>{'{{ $node["Name"].json.field }}'}</code> for another node. Test step re-uses the input from your last run.</p>
-                </>
-              )}
-              {tab === 'output' && <NodeResult result={results[selectedId]} />}
-              {tab === 'settings' && (
-                <div className="stack">
-                  <label className="inline"><input type="checkbox" checked={!!selected.data.node.disabled} onChange={(e) => updateNode({ disabled: e.target.checked })} /> Disabled (pass data through)</label>
-                  <label className="inline"><input type="checkbox" checked={!!selected.data.node.continueOnFail} onChange={(e) => updateNode({ continueOnFail: e.target.checked })} /> Continue on failure</label>
-                  <label className="inline"><input type="checkbox" checked={!!selected.data.node.retryOnFail} onChange={(e) => updateNode({ retryOnFail: e.target.checked })} /> Retry on failure</label>
-                  {selected.data.node.retryOnFail && (
-                    <div className="row gap">
-                      <label>Max tries<input type="number" min={1} max={5} value={selected.data.node.maxTries ?? 3} onChange={(e) => updateNode({ maxTries: Number(e.target.value) })} /></label>
-                      <label>Wait (ms)<input type="number" min={0} step={100} value={selected.data.node.waitBetweenTries ?? 1000} onChange={(e) => updateNode({ waitBetweenTries: Number(e.target.value) })} /></label>
-                    </div>
-                  )}
+              <span className="panel-icon"><NodeIcon name={editing.data.def.icon} size={18} /></span>
+              <input data-autofocus className="modal-title-input" value={editing.data.node.name} onChange={(e) => rename(e.target.value)} aria-label="Node name" />
+            </>
+          )}
+          footer={(
+            <>
+              <button className="link danger" onClick={deleteEditing}><Trash2 size={14} aria-hidden="true" /> Delete</button>
+              <span className="spacer" />
+              {!editing.data.def.isTrigger && <button onClick={testStep} disabled={!!busy}><Play size={14} aria-hidden="true" /> {busy === 'test' ? 'Testing…' : 'Test step'}</button>}
+              <button className="primary" onClick={() => setEditingId(null)}>Done</button>
+            </>
+          )}
+        >
+          <p className="muted small">{editing.data.def.description}</p>
+          <div
+            className="tabs" role="tablist"
+            onKeyDown={(e) => { const k = ['params', 'output', 'settings']; const i = k.indexOf(tab); if (e.key === 'ArrowRight') setTab(k[(i + 1) % 3]); else if (e.key === 'ArrowLeft') setTab(k[(i + 2) % 3]); }}
+          >
+            {[['params', 'Parameters'], ['output', 'Data'], ['settings', 'Settings']].map(([k, label]) => (
+              <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{label}</button>
+            ))}
+          </div>
+          {tab === 'params' && (
+            <>
+              <ParamForm
+                typeDef={editing.data.def} params={editing.data.node.parameters}
+                onChange={(parameters) => updateNode({ parameters })}
+                credentials={credentials} reloadCredentials={reloadCredentials}
+              />
+              <p className="muted small">Use <code>{'{{ $json.field }}'}</code> for the current item or <code>{'{{ $node["Name"].json.field }}'}</code> for another node. Test step re-uses the input from your last run.</p>
+            </>
+          )}
+          {tab === 'output' && <NodeResult result={results[editingId]} />}
+          {tab === 'settings' && (
+            <div className="stack">
+              <label className="inline"><input type="checkbox" checked={!!editing.data.node.disabled} onChange={(e) => updateNode({ disabled: e.target.checked })} /> Disabled (pass data through)</label>
+              <label className="inline"><input type="checkbox" checked={!!editing.data.node.continueOnFail} onChange={(e) => updateNode({ continueOnFail: e.target.checked })} /> Continue on failure</label>
+              <label className="inline"><input type="checkbox" checked={!!editing.data.node.retryOnFail} onChange={(e) => updateNode({ retryOnFail: e.target.checked })} /> Retry on failure</label>
+              {editing.data.node.retryOnFail && (
+                <div className="row gap">
+                  <label>Max tries<input type="number" min={1} max={5} value={editing.data.node.maxTries ?? 3} onChange={(e) => updateNode({ maxTries: Number(e.target.value) })} /></label>
+                  <label>Wait (ms)<input type="number" min={0} step={100} value={editing.data.node.waitBetweenTries ?? 1000} onChange={(e) => updateNode({ waitBetweenTries: Number(e.target.value) })} /></label>
                 </div>
               )}
-            </>
-          ) : (
-            <div className="stack">
-              <h3>Workflow settings</h3>
-              <label>Error workflow
-                <select
-                  value={meta.settings.errorWorkflowId ?? ''}
-                  onChange={(e) => setSetting({ errorWorkflowId: e.target.value || undefined })}
-                >
-                  <option value="">None</option>
-                  {workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                </select>
-                <span className="muted small">Runs when this workflow fails. It needs an Error Trigger node.</span>
-              </label>
-              <label>Timeout (seconds)
-                <input
-                  type="number" min={1} value={meta.settings.timeoutSec ?? 300}
-                  onChange={(e) => setSetting({ timeoutSec: Number(e.target.value) })}
-                />
-              </label>
-              <label className="inline">
-                <input
-                  type="checkbox" checked={meta.settings.saveSuccessData ?? true}
-                  onChange={(e) => setSetting({ saveSuccessData: e.target.checked })}
-                />
-                Keep node data of successful runs
-              </label>
-              <span className="muted small">Turn off for high-volume workflows to save storage. Failed runs and editor runs always keep full data.</span>
-              <AlertSettings
-                workflowId={id} alerts={meta.settings.alerts} credentials={credentials} reloadCredentials={reloadCredentials}
-                onChange={(alerts) => setSetting({ alerts })}
-              />
-              <p className="muted small">Workflow ID: <code>{id}</code></p>
-              {lastRun && (
-                <>
-                  <h4>Last run</h4>
-                  <ul className="run-list">
-                    {nodes.map((n) => results[n.id] && (
-                      <li key={n.id}>
-                        <button className="link" onClick={() => { setSelectedId(n.id); setTab('output'); }}>{n.data.node.name}</button>
-                        <StatusBadge status={results[n.id].status} />
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              <p className="muted small">Click a node to configure it. Drag from a node's right handle to another node's left handle to connect them. Press Delete to remove a selected node or connection. Hold Shift and drag to select several steps; Ctrl+C, Ctrl+V and Ctrl+D copy, paste and duplicate them, and Ctrl+Z undoes. Drop a step on a line to insert it there, or hover a line and click +.</p>
             </div>
           )}
-        </aside>
-      </div>
+        </Modal>
+      )}
+
+      {showSettings && (
+        <Modal title="Workflow settings" onClose={() => setShowSettings(false)}>
+          <div className="stack">
+            <label>Error workflow
+              <select value={meta.settings.errorWorkflowId ?? ''} onChange={(e) => setSetting({ errorWorkflowId: e.target.value || undefined })}>
+                <option value="">None</option>
+                {workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+              </select>
+              <span className="muted small">Runs when this workflow fails. It needs an Error Trigger node.</span>
+            </label>
+            <label>Timeout (seconds)
+              <input type="number" min={1} value={meta.settings.timeoutSec ?? 300} onChange={(e) => setSetting({ timeoutSec: Number(e.target.value) })} />
+            </label>
+            <label className="inline">
+              <input type="checkbox" checked={meta.settings.saveSuccessData ?? true} onChange={(e) => setSetting({ saveSuccessData: e.target.checked })} />
+              Keep node data of successful runs
+            </label>
+            <span className="muted small">Turn off for high-volume workflows to save storage. Failed runs and editor runs always keep full data.</span>
+            <AlertSettings workflowId={id} alerts={meta.settings.alerts} credentials={credentials} reloadCredentials={reloadCredentials} onChange={(alerts) => setSetting({ alerts })} />
+            <p className="muted small">Workflow ID: <code>{id}</code></p>
+            <h4>Shortcuts</h4>
+            <ul className="plain muted small">
+              <li>Double-click a step, or select it and press Enter, to edit it.</li>
+              <li>Drag from a right handle to a left handle to connect. Delete removes the selection.</li>
+              <li>Shift + drag selects several steps. Ctrl+C, V, D copy, paste and duplicate. Ctrl+Z undoes.</li>
+              <li>Drop a step on a line to insert it, or hover a line and click +.</li>
+            </ul>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

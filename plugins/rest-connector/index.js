@@ -196,7 +196,7 @@ function registerService(sdk, spec) {
   }
 
   sdk.defineNode({
-    type: `rest.${spec.id}`, name: spec.name, group: 'app', icon: spec.icon || '🔌', description: spec.description || `Use ${spec.name} (REST).`,
+    type: `rest.${spec.id}`, name: spec.name, group: 'app', icon: spec.icon || 'Plug', description: spec.description || `Use ${spec.name} (REST).`,
     ...(credProp ? { credentialType: credType } : {}),
     properties: props,
     // Two steps: settings are read one item at a time, then read-only (GET) calls wait for the service several at a time.

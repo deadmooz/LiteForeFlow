@@ -3,7 +3,7 @@
 
   "id": "todoexample",
   "name": "Todo Example",
-  "icon": "✅",
+  "icon": "CircleCheck",
   "description": "Shown under the node name in the palette.",
 
   "baseUrl": "https://api.example.com/v1",

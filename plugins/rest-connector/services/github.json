@@ -1,7 +1,7 @@
 {
   "id": "github",
   "name": "GitHub",
-  "icon": "🐙",
+  "icon": "GitPullRequest",
   "description": "List repositories and issues, create issues and comment on them.",
   "baseUrl": "https://api.github.com",
   "headers": { "accept": "application/vnd.github+json", "x-github-api-version": "2022-11-28" },

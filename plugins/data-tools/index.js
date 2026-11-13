@@ -19,7 +19,7 @@ const stable = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' &&
 export function register(sdk) {
   /* ---------------------------------- Filter ---------------------------------- */
   sdk.defineNode({
-    type: 'tools.filter', name: 'Filter', group: 'logic', icon: '🧹',
+    type: 'tools.filter', name: 'Filter', group: 'logic', icon: 'Filter',
     description: 'Keep only the items that match your conditions; the rest are dropped.',
     properties: [
       { name: 'conditions', label: 'Keep items where', type: 'conditions', default: [{ left: '{{ $json.value }}', op: 'equals', right: '' }] },
@@ -36,7 +36,7 @@ export function register(sdk) {
 
   /* ----------------------------------- Sort ----------------------------------- */
   sdk.defineNode({
-    type: 'tools.sort', name: 'Sort', group: 'data', icon: '↕️',
+    type: 'tools.sort', name: 'Sort', group: 'data', icon: 'ArrowUpDown',
     description: 'Put the items in order by one of their fields.',
     properties: [
       { name: 'field', label: 'Sort by field', type: 'string', required: true, placeholder: 'price   (or customer.name)' },
@@ -69,7 +69,7 @@ export function register(sdk) {
 
   /* ------------------------------ Remove Duplicates ------------------------------ */
   sdk.defineNode({
-    type: 'tools.unique', name: 'Remove Duplicates', group: 'data', icon: '♻️',
+    type: 'tools.unique', name: 'Remove Duplicates', group: 'data', icon: 'Copy',
     description: 'Drop repeated items. Compare one field (for example email), or whole items.',
     properties: [
       { name: 'field', label: 'Compare field', type: 'string', placeholder: 'email   (empty = compare whole items)' },
@@ -88,7 +88,7 @@ export function register(sdk) {
 
   /* ------------------------------- Split into Batches ------------------------------- */
   sdk.defineNode({
-    type: 'tools.chunk', name: 'Split into Batches', group: 'data', icon: '📦',
+    type: 'tools.chunk', name: 'Split into Batches', group: 'data', icon: 'Boxes',
     description: 'Group items into batches of a set size. Each batch leaves as one item: { batch, total, items: [...] }.',
     properties: [{ name: 'size', label: 'Batch size', type: 'number', default: 10, required: true }],
     async execute(ctx, inputs) {
@@ -122,7 +122,7 @@ export function register(sdk) {
     }
   };
   sdk.defineNode({
-    type: 'tools.dateTime', name: 'Date & Time', group: 'data', icon: '🗓️',
+    type: 'tools.dateTime', name: 'Date & Time', group: 'data', icon: 'CalendarClock',
     description: 'Get the current time, add or subtract time, change how a date looks, or count the time between two dates.',
     properties: [
       { name: 'operation', label: 'What to do', type: 'options', default: 'format', options: [opt('now', 'Get the current date and time'), opt('format', 'Change how a date looks'), opt('add', 'Add time to a date'), opt('subtract', 'Subtract time from a date'), opt('diff', 'Time between two dates')] },
@@ -169,7 +169,7 @@ export function register(sdk) {
 
   /* ----------------------------------- Crypto ----------------------------------- */
   sdk.defineNode({
-    type: 'tools.crypto', name: 'Crypto', group: 'data', icon: '🔐',
+    type: 'tools.crypto', name: 'Crypto', group: 'data', icon: 'Lock',
     description: 'Hash or sign text (SHA-256, HMAC), make a UUID or random text, and convert to or from base64.',
     properties: [
       { name: 'operation', label: 'What to do', type: 'options', default: 'hash', options: [opt('hash', 'Hash text'), opt('hmac', 'Sign text with a secret (HMAC)'), opt('base64Encode', 'Text → base64'), opt('base64Decode', 'Base64 → text'), opt('uuid', 'Make a UUID'), opt('random', 'Make random text')] },

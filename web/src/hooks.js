@@ -53,3 +53,12 @@ export function useStoredFlag(key, initial = false) {
   const toggle = () => setOn((cur) => { const next = !cur; try { localStorage.setItem(key, next ? '1' : '0'); } catch { /* not remembered */ } return next; });
   return [on, toggle];
 }
+
+/** A number setting (a sidebar width) kept inside [min, max] and remembered in this browser. A bad saved value falls back to `initial`. */
+export function useStoredNumber(key, initial, min, max) {
+  const clamp = (v) => Math.min(max, Math.max(min, Math.round(v)));
+  const [n, setN] = useState(() => { try { const v = Number(localStorage.getItem(key)); return localStorage.getItem(key) !== null && Number.isFinite(v) ? clamp(v) : initial; } catch { return initial; } });
+  // `remember` is false while a drag is going on; the value is written once when it ends
+  const set = (v, remember = true) => { const c = clamp(v); setN(c); if (remember) { try { localStorage.setItem(key, String(c)); } catch { /* not remembered */ } } };
+  return [n, set];
+}

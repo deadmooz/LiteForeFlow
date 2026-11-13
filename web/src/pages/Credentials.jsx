@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
 import { api, fmtDate } from '../api.js';
 import { CredentialModal } from '../components/ParamForm.jsx';
 import { Loading } from '../components/common.jsx';
@@ -19,7 +20,7 @@ export default function Credentials() {
     <div className="page">
       <div className="page-head">
         <h1>Credentials</h1>
-        <button className="primary" onClick={() => setModal({})}>＋ New credential</button>
+        <button className="primary" onClick={() => setModal({})}><Plus size={14} aria-hidden="true" /> New credential</button>
       </div>
       <p className="muted">Encrypted at rest (AES-256-GCM). Secret values are never sent back to the browser.</p>
       {error && <div className="error">{error}</div>}

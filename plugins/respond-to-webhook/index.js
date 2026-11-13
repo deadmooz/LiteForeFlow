@@ -1,6 +1,6 @@
 export function register(sdk) {
   sdk.defineNode({
-    type: 'respond.webhook', name: 'Respond to Webhook', group: 'core', icon: '📬',
+    type: 'respond.webhook', name: 'Respond to Webhook', group: 'core', icon: 'Reply',
     description: 'Send your own answer back to whoever called the workflow\'s Webhook. Set the Webhook to Respond = "responseNode" first.',
     properties: [
       { name: 'status', label: 'Status code', type: 'number', default: 200, help: '200 = OK, 201 = created, 400 = bad request, 404 = not found.' },

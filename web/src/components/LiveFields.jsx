@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { RotateCw } from 'lucide-react';
 import { api } from '../api.js';
 
 /** Options may be plain strings or { value, label }. */
@@ -49,7 +50,7 @@ export function LiveSelect({ typeDef, prop, values, value, onChange }) {
           {value && !listed && <option value={value}>{value}</option>}
           {state.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <button type="button" className="icon" title="Reload the list" aria-label="Reload the list" onClick={() => setTick((t) => t + 1)}>↻</button>
+        <button type="button" className="icon" title="Reload the list" aria-label="Reload the list" onClick={() => setTick((t) => t + 1)}><RotateCw size={14} aria-hidden="true" /></button>
       </div>
       <span className="muted small">
         <button type="button" className="link-button" onClick={() => setManual(true)}>Type it myself instead</button>

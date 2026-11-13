@@ -10,13 +10,13 @@ const passTrigger = (ctx, inputs) => [inputs[0]];
 /* ---------------------------------- Triggers ---------------------------------- */
 
 defineNode({
-  type: 'trigger.manual', name: 'Manual Trigger', group: 'trigger', icon: '▶️', isTrigger: true, inputs: 0,
+  type: 'trigger.manual', name: 'Manual Trigger', group: 'trigger', icon: 'Play', isTrigger: true, inputs: 0,
   description: 'Start the workflow by clicking Run in the editor.',
   execute: passTrigger,
 });
 
 defineNode({
-  type: 'trigger.webhook', name: 'Webhook', group: 'trigger', icon: '🪝', isTrigger: true, inputs: 0,
+  type: 'trigger.webhook', name: 'Webhook', group: 'trigger', icon: 'Webhook', isTrigger: true, inputs: 0,
   description: 'Start the workflow when an HTTP request hits its URL.',
   properties: [
     { name: 'path', label: 'Path', type: 'string', required: true, help: 'Served at /webhook/<path> while the workflow is active.' },
@@ -29,7 +29,7 @@ defineNode({
 });
 
 defineNode({
-  type: 'trigger.cron', name: 'Schedule', group: 'trigger', icon: '⏰', isTrigger: true, inputs: 0,
+  type: 'trigger.cron', name: 'Schedule', group: 'trigger', icon: 'Clock', isTrigger: true, inputs: 0,
   description: 'Start the workflow on a schedule, for example every day at 9:00.',
   properties: [
     // The UI shows a friendly picker for 'schedule'; what is stored is still a plain cron expression.
@@ -40,7 +40,7 @@ defineNode({
 });
 
 defineNode({
-  type: 'trigger.rss', name: 'RSS Feed', group: 'trigger', icon: '📰', isTrigger: true, inputs: 0,
+  type: 'trigger.rss', name: 'RSS Feed', group: 'trigger', icon: 'Rss', isTrigger: true, inputs: 0,
   description: 'Poll an RSS/Atom feed and start the workflow for each new entry.',
   properties: [
     { name: 'url', label: 'Feed URL', type: 'string', required: true },
@@ -50,7 +50,7 @@ defineNode({
 });
 
 defineNode({
-  type: 'trigger.error', name: 'Error Trigger', group: 'trigger', icon: '🚨', isTrigger: true, inputs: 0,
+  type: 'trigger.error', name: 'Error Trigger', group: 'trigger', icon: 'Siren', isTrigger: true, inputs: 0,
   description: 'Start this workflow when another workflow fails. Set it as the other workflow\'s "Error workflow".',
   execute: passTrigger,
 });
@@ -58,7 +58,7 @@ defineNode({
 /* ----------------------------------- Core ------------------------------------- */
 
 defineNode({
-  type: 'http.request', name: 'HTTP Request', group: 'core', icon: '🌐',
+  type: 'http.request', name: 'HTTP Request', group: 'core', icon: 'Globe',
   description: 'Call any REST API.',
   credentialType: ['httpBearer', 'httpBasic', 'httpHeader'],
   properties: [
@@ -144,7 +144,7 @@ export async function checkConditions(conds, combine, sandbox) {
 }
 
 defineNode({
-  type: 'logic.if', name: 'IF', group: 'logic', icon: '🔀', outputs: 2, outputLabels: ['true', 'false'],
+  type: 'logic.if', name: 'IF', group: 'logic', icon: 'GitBranch', outputs: 2, outputLabels: ['true', 'false'],
   description: 'Route items down the true or false branch.',
   properties: [
     { name: 'conditions', label: 'Conditions', type: 'conditions', default: [{ left: '{{ $json.value }}', op: 'equals', right: '' }] },
@@ -162,7 +162,7 @@ defineNode({
 });
 
 defineNode({
-  type: 'logic.switch', name: 'Switch', group: 'logic', icon: '🔢', outputs: 2, dynamicOutputs: 'switch',
+  type: 'logic.switch', name: 'Switch', group: 'logic', icon: 'ListOrdered', outputs: 2, dynamicOutputs: 'switch',
   description: 'Route each item to the output whose case matches. Last output is the fallback.',
   properties: [
     { name: 'value', label: 'Value', type: 'string', default: '{{ $json.type }}' },
@@ -183,7 +183,7 @@ defineNode({
 });
 
 defineNode({
-  type: 'logic.merge', name: 'Merge', group: 'logic', icon: '🔗', inputs: 2,
+  type: 'logic.merge', name: 'Merge', group: 'logic', icon: 'Merge', inputs: 2,
   description: 'Combine the items of two branches.',
   properties: [
     { name: 'mode', label: 'Mode', type: 'options', default: 'append', options: ['append', 'combineByPosition', 'combineByKey'] },
@@ -205,7 +205,7 @@ defineNode({
 });
 
 defineNode({
-  type: 'logic.wait', name: 'Wait', group: 'logic', icon: '⏳',
+  type: 'logic.wait', name: 'Wait', group: 'logic', icon: 'Hourglass',
   description: 'Pause the run (max 5 minutes in V1).',
   properties: [{ name: 'seconds', label: 'Seconds', type: 'number', default: 5 }],
   async execute(ctx, inputs) {
@@ -219,20 +219,20 @@ defineNode({
 });
 
 defineNode({
-  type: 'logic.noop', name: 'No Operation', group: 'logic', icon: '➖',
+  type: 'logic.noop', name: 'No Operation', group: 'logic', icon: 'Minus',
   description: 'Pass items through unchanged. Handy as a junction point.',
   execute: (ctx, inputs) => [inputs[0]],
 });
 
 defineNode({
-  type: 'logic.stopAndError', name: 'Stop and Error', group: 'logic', icon: '🛑',
+  type: 'logic.stopAndError', name: 'Stop and Error', group: 'logic', icon: 'OctagonX',
   description: 'Fail the run on purpose with a message (triggers the error workflow).',
   properties: [{ name: 'message', label: 'Error message', type: 'string', default: 'Something went wrong' }],
   async execute(ctx) { throw new Error(String(await ctx.param('message'))); },
 });
 
 defineNode({
-  type: 'logic.executeWorkflow', name: 'Execute Workflow', group: 'logic', icon: '🧩',
+  type: 'logic.executeWorkflow', name: 'Execute Workflow', group: 'logic', icon: 'Puzzle',
   description: 'Run another workflow in this workspace and use its result.',
   properties: [{ name: 'workflowId', label: 'Workflow ID', type: 'string', required: true, help: 'Found in the editor URL.' }],
   async execute(ctx, inputs) {
@@ -259,7 +259,7 @@ const setPath = (obj, path, value) => {
 const getPath = (obj, path) => path.split('.').reduce((o, k) => (o == null || !hasOwn(Object(o), k) ? undefined : o[k]), obj);
 
 defineNode({
-  type: 'data.set', name: 'Edit Fields', group: 'data', icon: '✏️',
+  type: 'data.set', name: 'Edit Fields', group: 'data', icon: 'Pencil',
   description: 'Add or overwrite fields on each item. Values can use {{ expressions }}.',
   properties: [
     { name: 'fields', label: 'Fields', type: 'keyvalue', default: [{ name: 'field', value: '' }] },
@@ -273,7 +273,7 @@ defineNode({
 });
 
 defineNode({
-  type: 'data.code', name: 'Code', group: 'data', icon: '🧮',
+  type: 'data.code', name: 'Code', group: 'data', icon: 'Code',
   description: 'Transform data with JavaScript (synchronous).',
   properties: [
     { name: 'mode', label: 'Mode', type: 'options', default: 'runOnce', options: ['runOnce', 'eachItem'], help: 'runOnce: `items` is an array of all item objects. eachItem: `$json` is the current item.' },
@@ -307,7 +307,7 @@ defineNode({
 });
 
 defineNode({
-  type: 'data.splitOut', name: 'Split Out', group: 'data', icon: '✂️',
+  type: 'data.splitOut', name: 'Split Out', group: 'data', icon: 'Scissors',
   description: 'Turn an array field into separate items.',
   properties: [{ name: 'field', label: 'Array field', type: 'string', default: 'data', help: 'Dot path, e.g. data.results' }],
   execute(ctx, inputs) {
@@ -323,14 +323,14 @@ defineNode({
 });
 
 defineNode({
-  type: 'data.aggregate', name: 'Aggregate', group: 'data', icon: '📦',
+  type: 'data.aggregate', name: 'Aggregate', group: 'data', icon: 'Package',
   description: 'Combine all items into a single item holding an array.',
   properties: [{ name: 'field', label: 'Output field', type: 'string', default: 'items' }],
   execute: (ctx, inputs) => [[{ json: { [ctx.rawParam('field') || 'items']: inputs[0].map((i) => i.json) } }]],
 });
 
 defineNode({
-  type: 'data.limit', name: 'Limit', group: 'data', icon: '🔟',
+  type: 'data.limit', name: 'Limit', group: 'data', icon: 'Hash',
   description: 'Keep only the first N items.',
   properties: [{ name: 'max', label: 'Max items', type: 'number', default: 10 }],
   execute: (ctx, inputs) => [inputs[0].slice(0, Math.max(0, Number(ctx.rawParam('max')) || 0))],
