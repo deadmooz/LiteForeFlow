@@ -9,13 +9,13 @@
   },
   "scripts": {
     "dev": "node --watch server/src/index.js",
-    "test": "node --test --test-concurrency=1 server/test/api.test.js server/test/schedule.test.mjs server/test/plugins.test.mjs server/test/perf.test.mjs server/test/alerts.test.mjs server/test/engine-order.test.mjs server/test/http-guard.test.mjs web/test/flow.test.mjs",
+    "test": "node --test --test-concurrency=1 server/test/api.test.js server/test/schedule.test.mjs server/test/plugins.test.mjs server/test/perf.test.mjs server/test/alerts.test.mjs server/test/engine-order.test.mjs server/test/http-guard.test.mjs server/test/auth-limit.test.mjs server/test/webhook-secret.test.mjs web/test/flow.test.mjs",
     "plugin:new": "node scripts/new-plugin.cjs",
     "build": "npm install --prefix web && npm run build --prefix web",
     "dev:web": "npm install --prefix web && npm run dev --prefix web",
-    "test:all": "node --test --test-concurrency=1 server/test/api.test.js server/test/schedule.test.mjs server/test/plugins.test.mjs server/test/perf.test.mjs server/test/distributed.test.js server/test/plugins-distributed.test.mjs server/test/alerts.test.mjs server/test/engine-order.test.mjs server/test/http-guard.test.mjs web/test/flow.test.mjs",
-    "pretest": "node scripts/test-db.mjs",
-    "pretest:all": "node scripts/test-db.mjs"
+    "test:all": "node --test --test-concurrency=1 server/test/api.test.js server/test/schedule.test.mjs server/test/plugins.test.mjs server/test/perf.test.mjs server/test/distributed.test.js server/test/plugins-distributed.test.mjs server/test/alerts.test.mjs server/test/engine-order.test.mjs server/test/http-guard.test.mjs server/test/auth-limit.test.mjs server/test/webhook-secret.test.mjs web/test/flow.test.mjs",
+    "pretest": "node -e \"require('fs').existsSync('scripts/test-db.mjs')||(console.error('The tests are kept outside git (see .gitignore), so this clone has none to run.'),process.exit(1))\" && node scripts/test-db.mjs",
+    "pretest:all": "node -e \"require('fs').existsSync('scripts/test-db.mjs')||(console.error('The tests are kept outside git (see .gitignore), so this clone has none to run.'),process.exit(1))\" && node scripts/test-db.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -29,6 +29,6 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.16",
     "pg": "^8.13.1",
-    "undici": "^7.30.2"
+    "undici": "7.30.2"
   }
 }

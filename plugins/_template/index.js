@@ -1,4 +1,4 @@
-// A LiteForeFlow plugin. Change anything here, then press Reload on the Plugins page.
+// A LiteForeFlow plugin. Change anything here, then wait a few seconds: every container picks it up.
 // Full guide: docs/PLUGINS.md
 
 export function register(sdk) {

@@ -9,11 +9,13 @@ export const webhookRouter = express.Router();
 
 // path + method -> { wf, node, params }. Kept only while the change feed is live; emptied the moment any workflow or webhook changes.
 const hooks = new Map();
-onWorkflowChange(() => hooks.clear());
+const misses = new Map(); // key -> expiry: unknown paths cost no query for a few seconds (kept apart, so a scan cannot push real hooks out)
+onWorkflowChange(() => { hooks.clear(); misses.clear(); });
 async function findHook(path, method) {
   const key = `${method} ${path}`;
   const hit = isLive() ? hooks.get(key) : null;
-  if (hit && hit.exp > Date.now()) return hit.wf ? hit : null;
+  if (hit && hit.exp > Date.now()) return hit;
+  if (isLive() && misses.get(key) > Date.now()) return null;
   // The exact method wins over ANY. The workflow comes in the same query.
   const row = await get(
     `SELECT w.*, h.node_id FROM webhooks h JOIN workflows w ON w.id = h.workflow_id
@@ -21,7 +23,7 @@ async function findHook(path, method) {
   );
   const wf = row && parseWorkflow(row);
   if (!wf?.active) {
-    if (isLive()) { if (hooks.size >= 500) hooks.clear(); hooks.set(key, { exp: Date.now() + 10_000 }); } // unknown paths cost no query for a few seconds
+    if (isLive()) { if (misses.size >= 500) misses.clear(); misses.set(key, Date.now() + 10_000); }
     return null;
   }
   const node = wf.definition.nodes.find((n) => n.id === row.node_id);

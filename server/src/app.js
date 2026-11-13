@@ -4,6 +4,7 @@ import cors from 'cors';
 import path from 'node:path';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { authRouter, meRouter, requireAuth, HttpError } from './routes/auth.js';
 import { workflowsRouter } from './routes/workflows.js';
@@ -76,14 +77,18 @@ export function createApp() {
   // Large JSON answers (workflow lists, execution logs, the node catalogue) are gzipped on a thread-pool thread.
   const gzipped = new Map();
   app.use('/api', (req, res, next) => {
+    res.vary('Accept-Encoding');
     if (req.method !== 'GET' || !/gzip/.test(req.get('accept-encoding') ?? '')) return next();
     const json = res.json.bind(res);
     res.json = (body) => {
       const text = JSON.stringify(body);
       if (text === undefined || text.length < 1024 || res.headersSent) return json(body);
+      // Same ETag / 304 behaviour as a plain answer, so the browser does not download an unchanged list again.
+      res.set('ETag', `W/"${crypto.createHash('sha1').update(text).digest('base64url')}"`);
+      if (req.fresh) return res.status(304).end();
       const send = (buf) => {
         if (!res.getHeader('content-type')) res.type('application/json');
-        res.set({ 'content-encoding': 'gzip', vary: 'Accept-Encoding', 'content-length': buf.length });
+        res.set({ 'content-encoding': 'gzip', 'content-length': buf.length });
         res.end(buf);
       };
       const known = gzipped.get(text); // the node and credential catalogues are the same for everyone: compress them once

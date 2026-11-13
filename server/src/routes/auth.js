@@ -15,15 +15,13 @@ export class HttpError extends Error {
 
 /* Tiny in-memory limiter for credential endpoints. Use a shared store behind multiple instances. */
 const attempts = new Map();
-const note = (ip) => attempts.set(ip, [...(attempts.get(ip) ?? []), Date.now()]);
 // Addresses that stopped coming are forgotten, so the map cannot grow for ever.
 setInterval(() => { const t = Date.now(); for (const [ip, ts] of attempts) if (!ts.length || t - ts[ts.length - 1] > 60_000) attempts.delete(ip); }, 60_000).unref();
-/** Sign-up counts every try; sign-in counts only wrong passwords (see the login route), so people behind one office address are not locked out by good logins. */
+/** Every try is counted when it arrives, so a burst of parallel guesses cannot slip past while the slow password check runs; a good sign-in gives its try back (see the login route). */
 function rateLimit(req, res, next) {
   const recent = (attempts.get(req.ip) ?? []).filter((x) => Date.now() - x < 60_000);
-  attempts.set(req.ip, recent);
-  if (recent.length >= config.authRateLimitPerMin) return next(new HttpError(429, 'Too many attempts, try again in a minute'));
-  if (!req.path.endsWith('/login')) note(req.ip);
+  if (recent.length >= config.authRateLimitPerMin) { attempts.set(req.ip, recent); return next(new HttpError(429, 'Too many attempts, try again in a minute')); }
+  attempts.set(req.ip, [...recent, Date.now()]);
   return next();
 }
 
@@ -68,7 +66,8 @@ authRouter.post('/login', rateLimit, async (req, res) => {
   const user = await get('SELECT * FROM users WHERE email = ?', String(email ?? '').trim().toLowerCase());
   // Compare even when the user is missing so response time does not reveal which emails exist.
   const ok = await bcrypt.compare(String(password ?? ''), user?.password_hash ?? '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinva');
-  if (!user || !ok) { note(req.ip); throw new HttpError(401, 'Invalid email or password'); }
+  if (!user || !ok) throw new HttpError(401, 'Invalid email or password');
+  attempts.get(req.ip)?.pop(); // a right password does not count against the office address
   res.json({ token: sign(user.id), user: publicUser(user), workspaces: await workspacesOf(user.id) });
 });
 

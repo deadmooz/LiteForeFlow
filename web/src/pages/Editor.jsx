@@ -480,7 +480,7 @@ function EditorInner() {
   };
 
   const webhookUrls = meta?.active
-    ? nodes.filter((n) => n.data.node.type === 'trigger.webhook').map((n) => ({ name: n.data.node.name, url: `${window.location.origin}/webhook/${effectiveParams(n.data.def, n.data.node.parameters).path}`, method: effectiveParams(n.data.def, n.data.node.parameters).method }))
+    ? nodes.filter((n) => n.data.node.type === 'trigger.webhook').map((n) => ({ name: n.data.node.name, url: `${window.location.origin}/webhook/${effectiveParams(n.data.def, n.data.node.parameters).path}`, method: effectiveParams(n.data.def, n.data.node.parameters).method, secret: effectiveParams(n.data.def, n.data.node.parameters).secret }))
     : [];
 
   const displayNodes = useMemo(() => (near ? nodes.map((n) => (n.id === near.id ? { ...n, className: `${n.className ?? ''} connect-near`.trim(), data: { ...n.data, near: near.handle } } : n)) : nodes), [nodes, near]);
@@ -533,7 +533,10 @@ function EditorInner() {
       {webhookUrls.length > 0 && (
         <div className="webhook-bar">
           {webhookUrls.map((w) => (
-            <span key={w.name}><b>{w.name}</b> <code>{w.method} {w.url}</code></span>
+            <span key={w.name}>
+              <b>{w.name}</b> <code>{w.method} {w.url}</code>
+              {w.secret ? <> · callers must send the header <code>x-webhook-secret: {w.secret}</code> (clear the Shared secret field to allow calls without it)</> : null}
+            </span>
           ))}
         </div>
       )}
