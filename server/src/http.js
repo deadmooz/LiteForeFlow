@@ -58,6 +58,7 @@ export function isPrivateIp(ip) {
 }
 
 const BLOCKED = 'Requests to private or loopback network addresses are blocked on this server';
+const assertPublic = (addrs) => { if (addrs.some(isPrivateIp)) throw Object.assign(new Error(BLOCKED), { code: 'EBLOCKED' }); };
 
 // The address is checked at the moment of connecting, so a name that answers "public" to a pre-check and "internal" to the
 // real connection (DNS rebinding) cannot get through. Literal IPs skip the lookup, so they are checked up front.
@@ -65,8 +66,8 @@ const guarded = new Agent({
   connect: {
     lookup: (host, opts, cb) => dns.lookup(host, opts, (err, res, fam) => {
       if (err) return cb(err);
-      const list = Array.isArray(res) ? res : [{ address: res }];
-      return list.some((x) => isPrivateIp(x.address)) ? cb(Object.assign(new Error(BLOCKED), { code: 'EBLOCKED' })) : cb(null, res, fam);
+      try { assertPublic((Array.isArray(res) ? res : [{ address: res }]).map((x) => x.address)); } catch (e) { return cb(e); }
+      return cb(null, res, fam);
     }),
   },
 });
@@ -137,7 +138,7 @@ export async function httpRequest({
   for (const [k, v] of Object.entries(query ?? {})) if (v !== undefined && v !== null) u.searchParams.set(k, String(v));
   const guard = config.blockPrivateNetwork && !(trustedOrigin && u.origin === trustedOrigin); // an address the server admin chose (e.g. OLLAMA_HOST) is exempt
   const literal = u.hostname.replace(/^\[|\]$/g, '');
-  if (guard && net.isIP(literal) && isPrivateIp(literal)) throw new Error(BLOCKED);
+  if (guard && net.isIP(literal)) assertPublic([literal]);
 
   const h = { ...headers };
   let payload;
@@ -204,7 +205,10 @@ export async function publicHost(host) {
   const h = String(host ?? '').trim().replace(/^\[|\]$/g, '');
   if (!h) throw new Error('No host is set');
   if (!config.blockPrivateNetwork) return h;
-  const addrs = net.isIP(h) ? [h] : (await dns.promises.lookup(h, { all: true })).map((a) => a.address);
-  if (addrs.some(isPrivateIp)) throw new Error(BLOCKED);
-  return addrs[0];
+  const addrs = net.isIP(h) ? [h] : (await dns.promises.lookup(h, { all: true }).catch(() => { throw new Error(`Could not find a server called ${h}: check the address`); })).map((a) => a.address);
+  assertPublic(addrs);
+  return addrs.find(net.isIPv4) ?? addrs[0]; // IPv4 first: a container often has no IPv6 route
 }
+
+/** What to say to a TLS server as its name: the host as typed (trimmed), but never an IP number (that is not allowed and only prints a warning). */
+export const tlsName = (host) => { const h = String(host ?? '').trim(); return net.isIP(h) ? undefined : h; };

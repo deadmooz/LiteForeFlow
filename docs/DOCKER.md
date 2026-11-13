@@ -20,7 +20,7 @@ Put them in `.env` next to `docker-compose.yml` (see `.env.example`). Only `LITE
 | Setting | Default in Docker | Meaning |
 |---|---|---|
 | `LITEFOREFLOW_SECRET` | *(required)* | Encrypts saved credentials. Back it up - without it they cannot be read |
-| `POSTGRES_PASSWORD` | none, **required** | Password of the bundled Postgres. Use a long random value. It is applied when the database is first created; to change it later run `ALTER USER liteforeflow PASSWORD 'new'` inside the postgres container and update `.env` |
+| `POSTGRES_PASSWORD` | none, **required** | Password of the bundled Postgres. Use a long random value. It is applied when the database is first created; to change it later run `ALTER USER liteforeflow PASSWORD 'new'` inside the postgres container and update `.env`. **Upgrading an older install:** put its current password in `.env` (it was `liteforeflow` unless you set one), or rotate it with `ALTER USER` before changing `.env`; a new value that the existing database does not have makes the API unable to log in |
 | `PUBLIC_URL`, `PORT` | `http://localhost:3000`, `3000` | Address shown for webhooks; host port of the API |
 | `ALLOW_SIGNUP` | `true` | Set to `false` once your accounts exist |
 | `BLOCK_PRIVATE_NETWORK` | `true` | The HTTP node cannot call private/internal addresses (the configured Ollama address is still allowed) |

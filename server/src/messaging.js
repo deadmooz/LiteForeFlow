@@ -1,4 +1,4 @@
-import { httpRequest, publicHost } from './http.js';
+import { httpRequest, publicHost, tlsName } from './http.js';
 import { config } from './config.js';
 
 /*
@@ -24,7 +24,7 @@ export async function telegramSend(token, body, { timeoutMs, ignoreStatus } = {}
 export async function smtpTransport(cred, extra = {}) {
   const nodemailer = (await import('nodemailer')).default;
   return nodemailer.createTransport({
-    host: await publicHost(cred.host), port: Number(cred.port) || 587, secure: !!cred.secure, tls: { servername: cred.host },
+    host: await publicHost(cred.host), port: Number(cred.port) || 587, secure: !!cred.secure, tls: { servername: tlsName(cred.host) },
     auth: cred.user ? { user: cred.user, pass: cred.password } : undefined, ...extra,
   });
 }

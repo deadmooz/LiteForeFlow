@@ -1,5 +1,5 @@
 import { defineNode, credentialProperty } from './registry.js';
-import { httpRequest, publicHost } from '../http.js';
+import { httpRequest, publicHost, tlsName } from '../http.js';
 import { config } from '../config.js';
 import { slackPost, telegramSend, smtpTransport } from '../messaging.js';
 
@@ -280,7 +280,7 @@ defineNode({
     try { pg = (await import('pg')).default; } catch { throw new Error('The Postgres node needs an extra package. Stop LiteForeFlow, run:  npm run scale-up  and start it again.'); }
     const client = new pg.Client({
       host: await publicHost(c.host), port: Number(c.port) || 5432, database: c.database, user: c.user, password: c.password,
-      ssl: c.ssl ? { rejectUnauthorized: false, servername: c.host } : undefined, connectionTimeoutMillis: 10000,
+      ssl: c.ssl ? { rejectUnauthorized: false, servername: tlsName(c.host) } : undefined, connectionTimeoutMillis: 10000,
     });
     await client.connect();
     try {

@@ -121,7 +121,7 @@ meRouter.delete('/workspace/members/:userId', async (req, res) => {
   res.status(204).end();
 });
 
-meRouter.post('/workspace/invite', async (req, res) => {
+meRouter.post('/workspace/invite', rateLimit, async (req, res) => { // limited like sign-in: the 404 for an unknown email must not be a free account lookup
   if (req.role !== 'owner') throw new HttpError(403, 'Only the workspace owner can invite members');
   await assertCanInvite(req.workspaceId); // first, so the answer is the same whether or not the email has an account
   const email = String(req.body?.email ?? '').trim().toLowerCase();
