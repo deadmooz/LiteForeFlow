@@ -133,7 +133,7 @@ export async function httpRequest({
   timeoutMs = 30000, ignoreStatus = false, responseType = 'auto', signal, trustedOrigin,
 }) {
   let u;
-  try { u = new URL(url); } catch { throw new Error(`Invalid URL: ${url}`); }
+  try { u = new URL(url); } catch { throw new Error(url ? `Invalid URL: ${url}` : 'The URL is empty: fill in the URL field'); }
   if (!['http:', 'https:'].includes(u.protocol)) throw new Error('Only http(s) URLs are supported');
   for (const [k, v] of Object.entries(query ?? {})) if (v !== undefined && v !== null) u.searchParams.set(k, String(v));
   const guard = config.blockPrivateNetwork && !(trustedOrigin && u.origin === trustedOrigin); // an address the server admin chose (e.g. OLLAMA_HOST) is exempt

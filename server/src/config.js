@@ -30,8 +30,21 @@ function ollamaUrl(raw) {
 }
 const port = Number(env.PORT) || 3000;
 
+/**
+ * Which proxy hops may tell the server a visitor's address (X-Forwarded-For). Off by default: with the API published directly,
+ * any visitor could send that header and pick their own address, which defeats the sign-in rate limit.
+ * Behind ONE reverse proxy (Caddy, nginx, Traefik) set TRUST_PROXY=1. Also accepts true, a hop count or a subnet list.
+ */
+function trustProxy(raw) {
+  const v = String(raw ?? '').trim();
+  if (!v || v === 'false' || v === '0') return false;
+  if (v === 'true') return true;
+  return /^\d+$/.test(v) ? Number(v) : v;
+}
+
 export const config = {
   port,
+  trustProxy: trustProxy(env.TRUST_PROXY),
   publicUrl: (env.PUBLIC_URL || `http://localhost:${port}`).replace(/\/$/, ''),
   // Failure alerts: at most one per workflow per window, in minutes (0 turns the limit off). The API addresses can be pointed elsewhere for tests.
   alertCooldownMs: Math.max(0, Number(env.ALERT_COOLDOWN_MIN ?? 10) || 0) * 60_000,
