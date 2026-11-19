@@ -1,6 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'node:crypto';
 import { all, get, run, transaction, uid, now } from '../db.js';
 import { jwtSecret } from '../crypto.js';
 import { config } from '../config.js';
@@ -24,6 +25,10 @@ function rateLimit(req, res, next) {
   attempts.set(req.ip, [...recent, Date.now()]);
   return next();
 }
+
+// A real bcrypt hash that no password matches. An unknown email is compared against it so the answer takes as long as for a known one
+// (a malformed hash string makes bcryptjs return false at once, which let response time reveal which emails have accounts).
+const DUMMY_HASH = bcrypt.hashSync(crypto.randomUUID(), 10);
 
 const sign = (userId) => jwt.sign({ sub: userId }, jwtSecret, { expiresIn: '7d' });
 const publicUser = (u) => ({ id: u.id, email: u.email, name: u.name });
@@ -65,7 +70,7 @@ authRouter.post('/login', rateLimit, async (req, res) => {
   const { email, password } = req.body ?? {};
   const user = await get('SELECT * FROM users WHERE email = ?', String(email ?? '').trim().toLowerCase());
   // Compare even when the user is missing so response time does not reveal which emails exist.
-  const ok = await bcrypt.compare(String(password ?? ''), user?.password_hash ?? '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinva');
+  const ok = await bcrypt.compare(String(password ?? ''), user?.password_hash ?? DUMMY_HASH);
   if (!user || !ok) throw new HttpError(401, 'Invalid email or password');
   attempts.get(req.ip)?.pop(); // a right password does not count against the office address (it hands back the newest try: the total stays exact, which one it was does not matter)
   res.json({ token: sign(user.id), user: publicUser(user), workspaces: await workspacesOf(user.id) });

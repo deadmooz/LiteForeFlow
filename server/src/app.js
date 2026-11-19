@@ -12,8 +12,10 @@ import { catalogRouter, credentialsRouter, executionsRouter, toolsRouter, stripe
 import { webhookRouter } from './routes/webhooks.js';
 import { pluginsRouter } from './routes/plugins.js';
 import './jobs.js'; // registers the job handler with the queue
-import { queueMode } from './queue.js';
+import { queueMode, queueHealth } from './queue.js';
 import { sandboxMode } from './sandbox.js';
+import { get } from './db.js';
+import { config } from './config.js';
 
 const STATIC_TYPES = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
 
@@ -48,7 +50,7 @@ function compressedStatic(dist) {
 
 export function createApp() {
   const app = express();
-  app.set('trust proxy', 1);
+  app.set('trust proxy', config.trustProxy); // off unless TRUST_PROXY is set (see config.js)
   app.disable('x-powered-by');
   app.use(cors());
   app.use((req, res, next) => {
@@ -71,7 +73,15 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
   app.use(express.text({ type: ['text/*'], limit: '1mb' }));
 
-  app.get('/api/health', (req, res) => res.json({ ok: true, db: 'postgres', queue: queueMode, sandbox: sandboxMode() }));
+  // Really checks the two things a run needs (the database and the queue), so a dead one shows as unhealthy instead of "ok".
+  const probe = (fn) => new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 2000);
+    Promise.resolve().then(fn).then(() => resolve(true), () => resolve(false)).finally(() => clearTimeout(timer));
+  });
+  app.get('/api/health', async (req, res) => {
+    const [db, queue] = await Promise.all([probe(() => get('SELECT 1 AS ok')), probe(queueHealth)]);
+    res.status(db && queue ? 200 : 503).json({ ok: db && queue, db: 'postgres', queue: queueMode, sandbox: sandboxMode(), checks: { db, queue } });
+  });
   app.use('/webhook', webhookRouter);
 
   // Large JSON answers (workflow lists, execution logs, the node catalogue) are gzipped on a thread-pool thread.
@@ -134,7 +144,7 @@ export function createApp() {
     if (err.type === 'entity.too.large') return res.status(413).json({ error: 'Payload too large' });
     const status = err instanceof HttpError || err.status ? err.status : 500;
     if (status >= 500) console.error('[error]', err);
-    return res.status(status).json({ error: status >= 500 ? 'Internal server error' : err.message });
+    return res.status(status).json({ error: status >= 500 && !err.expose ? 'Internal server error' : err.message });
   });
 
   return app;

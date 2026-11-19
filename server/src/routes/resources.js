@@ -84,7 +84,7 @@ credentialsRouter.get('/:id', async (req, res) => {
 
 credentialsRouter.post('/', async (req, res) => {
   const { name, type, data } = req.body ?? {};
-  if (!name || !type || typeof data !== 'object') throw new HttpError(400, 'name, type and data are required');
+  if (!name || !type || !data || typeof data !== 'object' || Array.isArray(data)) throw new HttpError(400, 'name, type and data are required');
   const err = validateCredentialData(type, data);
   if (err) throw new HttpError(400, err);
   const id = uid();

@@ -16,6 +16,8 @@ x-app: &app
     PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
     BLOCK_PRIVATE_NETWORK: ${BLOCK_PRIVATE_NETWORK:-true}
     ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
+    # Set TRUST_PROXY=1 only when a reverse proxy (Caddy, nginx, Traefik) sits in front. Left off, nobody can fake the address the sign-in limit uses.
+    TRUST_PROXY: ${TRUST_PROXY:-false}
     MAX_CONCURRENCY: ${MAX_CONCURRENCY:-10}
     # Sign-in / sign-up attempts allowed per minute from one address (raise it if many people share one office or proxy address).
     AUTH_RATE_LIMIT_PER_MIN: ${AUTH_RATE_LIMIT_PER_MIN:-20}
