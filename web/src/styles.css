@@ -1,38 +1,56 @@
+/* Hallmark v2.0.0 · built: Claude Code · redesign: full · theme: coral (by request) · genre: modern-minimal · scope: app · fonts: Figtree stand-in for General Sans, Geist Mono */
+/* critique: a warm stationery voice for a workflow tool; textures are left out on purpose (an app screen is scanned, not admired), the light is carried by the lit edge and the cast shadow */
 /*
- * Flat, neutral tokens: solid surfaces, 1px borders, one blue accent, no gradients, glows or shadows.
- * Plain CSS variables only; the system font is used.
+ * Coral tokens: warm grey desk, cotton sheets with a lit edge and a cast shadow, ink controls, one coral ink that
+ * means "settled". Light and dark. The fonts are served from /fonts (the page's security policy allows no other host).
  */
+@font-face { font-family: 'Figtree'; src: url('/fonts/figtree-latin-wght-normal.woff2') format('woff2'); font-weight: 300 900; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Geist Mono'; src: url('/fonts/geist-mono-latin-wght-normal.woff2') format('woff2'); font-weight: 100 900; font-style: normal; font-display: swap; }
 :root {
-  --font: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --r-container: 8px; --r-button: 6px; --r-pill: 999px;
-  --bg: #f6f7f9; --ground: var(--bg);
-  --text: #111827; --text-2: #374151; --muted: #6b7280;
-  --surface: #ffffff; --surface-2: #f0f2f5; --glass: var(--surface); --stroke: none; --inner: none;
-  --border: #d5d9e0; --divider: #e5e8ed;
-  --primary: #2563eb; --primary-hover: #1d4ed8; --primary-press: #1e40af; --primary-text: #fff; --primary-soft: rgba(37, 99, 235, .10);
+  --font: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --r-container: 8px; --r-button: 8px; --r-input: 6px; --r-pill: 999px;
+  --bg: oklch(94.3% .008 64); --ground: var(--bg);
+  --text: oklch(23% .012 38); --text-2: oklch(29% .013 40); --muted: oklch(47% .013 45);
+  --surface: oklch(98.8% .0045 80); --surface-2: oklch(94.5% .007 55); --glass: var(--surface); --stroke: none; --inner: none;
+  --border: oklch(81% .011 55); --divider: oklch(87% .009 55);
+  --primary: oklch(54% .165 29); --primary-hover: oklch(48% .165 29); --primary-press: oklch(43% .15 29); --primary-text: oklch(98.8% .0045 80); --primary-soft: oklch(94% .03 40);
   --wash: var(--surface-2);
-  --ok: #166534; --ok-bg: #e3f4ea; --err: #b42318; --err-bg: #fdecea; --warn: #8a5a00; --warn-bg: #fdf3d8;
-  --grid: #d5d9e0; --grid-minor: #e3e6eb; --grid-major: #cdd2da;
-  --shadow-sm: none; --shadow-md: none; --shadow-xl: none;
-  --skel-a: #eceff3; --skel-b: #e0e4ea;
+  --board: oklch(22% .011 40); --board-ink: oklch(96.5% .006 70);
+  --ok: oklch(49% .15 33); --ok-bg: oklch(95% .03 45); --err: oklch(45% .15 28); --err-bg: oklch(95% .03 28); --warn: oklch(44% .07 70); --warn-bg: oklch(95% .035 85);
+  --grid: oklch(87% .009 55); --grid-minor: oklch(92.5% .008 60); --grid-major: oklch(89.5% .009 58);
+  --shade: 32% .03 50; --lit: 100% .005 80; --hi: oklch(100% .005 80 / .9);
+  --edge: inset 0 1px 0 var(--hi), inset 0 -1px 0 oklch(var(--shade) / .07), 0 0 0 .5px oklch(var(--shade) / .22), 0 1px 0 oklch(var(--shade) / .12);
+  --cast: 6px 5px 10px -6px oklch(var(--shade) / .3); --cast-lift: 12px 10px 18px -8px oklch(var(--shade) / .3);
+  --press: inset 1px 1.5px 2px oklch(var(--shade) / .16), inset -1px -1px 0 var(--hi), 0 0 0 .5px oklch(var(--shade) / .2);
+  --shadow-sm: 0 1px 2px oklch(20% .01 35 / .05); --shadow-md: var(--cast); --shadow-xl: 18px 16px 30px -14px oklch(var(--shade) / .35);
+  --skel-a: oklch(92% .008 60); --skel-b: oklch(88% .01 60);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme=light]) {
-    --bg: #0f1115; --text: #e6e8ec; --text-2: #c3c7ce; --muted: #8b919c;
-    --surface: #171a21; --surface-2: #1f232b; --border: #2e333d; --divider: #252a33;
-    --primary: #4f8cff; --primary-hover: #7aa8ff; --primary-press: #9bbcff; --primary-soft: rgba(79, 140, 255, .16);
-    --ok: #6fd391; --ok-bg: #16301f; --err: #ff8a80; --err-bg: #3a1a18; --warn: #f2c14e; --warn-bg: #33290f;
-    --grid: #2e333d; --grid-minor: #232830; --grid-major: #353b46; --skel-a: #1c2028; --skel-b: #262b35;
+    --bg: oklch(20% .008 60); --text: oklch(93% .01 70); --text-2: oklch(85% .01 70); --muted: oklch(70% .012 60);
+    --surface: oklch(26% .01 60); --surface-2: oklch(31% .01 60); --border: oklch(42% .011 55); --divider: oklch(34% .01 55);
+    --primary: oklch(72% .14 32); --primary-hover: oklch(78% .13 32); --primary-press: oklch(66% .14 32); --primary-text: oklch(20% .01 40); --primary-soft: oklch(31% .04 40);
+    --board: oklch(93% .01 70); --board-ink: oklch(20% .01 40);
+    --ok: oklch(76% .13 32); --ok-bg: oklch(31% .04 40); --err: oklch(76% .13 28); --err-bg: oklch(30% .05 28); --warn: oklch(80% .08 85); --warn-bg: oklch(30% .04 85);
+    --grid: oklch(34% .01 55); --grid-minor: oklch(22.5% .008 58); --grid-major: oklch(26.5% .009 58); --skel-a: oklch(28% .009 60); --skel-b: oklch(33% .01 60);
+    --shade: 0% 0 0; --hi: oklch(100% 0 0 / .08);
+    --edge: inset 0 1px 0 var(--hi), 0 0 0 .5px oklch(0% 0 0 / .5); --cast: 6px 5px 10px -6px oklch(0% 0 0 / .6); --cast-lift: 12px 10px 18px -8px oklch(0% 0 0 / .6);
+    --press: inset 1px 1.5px 2px oklch(0% 0 0 / .45), inset -1px -1px 0 var(--hi); --shadow-xl: 18px 16px 30px -14px oklch(0% 0 0 / .6);
     color-scheme: dark;
   }
 }
 :root[data-theme=dark] {
-  --bg: #0f1115; --text: #e6e8ec; --text-2: #c3c7ce; --muted: #8b919c;
-  --surface: #171a21; --surface-2: #1f232b; --border: #2e333d; --divider: #252a33;
-  --primary: #4f8cff; --primary-hover: #7aa8ff; --primary-press: #9bbcff; --primary-soft: rgba(79, 140, 255, .16);
-  --ok: #6fd391; --ok-bg: #16301f; --err: #ff8a80; --err-bg: #3a1a18; --warn: #f2c14e; --warn-bg: #33290f;
-  --grid: #2e333d; --grid-minor: #232830; --grid-major: #353b46; --skel-a: #1c2028; --skel-b: #262b35;
+  --bg: oklch(20% .008 60); --text: oklch(93% .01 70); --text-2: oklch(85% .01 70); --muted: oklch(70% .012 60);
+  --surface: oklch(26% .01 60); --surface-2: oklch(31% .01 60); --border: oklch(42% .011 55); --divider: oklch(34% .01 55);
+  --primary: oklch(72% .14 32); --primary-hover: oklch(78% .13 32); --primary-press: oklch(66% .14 32); --primary-text: oklch(20% .01 40); --primary-soft: oklch(31% .04 40);
+  --board: oklch(93% .01 70); --board-ink: oklch(20% .01 40);
+  --ok: oklch(76% .13 32); --ok-bg: oklch(31% .04 40); --err: oklch(76% .13 28); --err-bg: oklch(30% .05 28); --warn: oklch(80% .08 85); --warn-bg: oklch(30% .04 85);
+  --grid: oklch(34% .01 55); --grid-minor: oklch(22.5% .008 58); --grid-major: oklch(26.5% .009 58); --skel-a: oklch(28% .009 60); --skel-b: oklch(33% .01 60);
+  --shade: 0% 0 0; --hi: oklch(100% 0 0 / .08);
+  --edge: inset 0 1px 0 var(--hi), 0 0 0 .5px oklch(0% 0 0 / .5); --cast: 6px 5px 10px -6px oklch(0% 0 0 / .6); --cast-lift: 12px 10px 18px -8px oklch(0% 0 0 / .6);
+  --press: inset 1px 1.5px 2px oklch(0% 0 0 / .45), inset -1px -1px 0 var(--hi); --shadow-xl: 18px 16px 30px -14px oklch(0% 0 0 / .6);
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -424,3 +442,118 @@ body.resizing { user-select: none; cursor: col-resize; }
   .modal-backdrop:has(.modal.node) { padding: 0; }
   .modal.node { width: 100%; height: 100dvh; max-height: none; border-radius: 0; border: 0; }
 }
+
+/* =====================================================================
+   Coral layer: stationery on a desk. One light from the left: every sheet has a lit edge on top and left, a shade edge
+   on the bottom and right, and a cast shadow falling right. It sits last, so it wins over the rules above.
+   ===================================================================== */
+body { font-family: var(--font); background: radial-gradient(90% 120% at 0% 30%, color-mix(in oklch, var(--surface) 70%, transparent), transparent 62%), var(--bg); }
+code, .mono, pre.json, textarea.mono { font-family: var(--font-mono); }
+.table td, .vrow, .count { font-variant-numeric: tabular-nums; }
+h1 { font-weight: 600; letter-spacing: -.035em; }
+.hello h1, .page-head h1 { font-size: 28px; line-height: 32px; letter-spacing: -.035em; }
+h4, .table th, .vhead { text-transform: none; letter-spacing: 0; font-size: 12.5px; }
+a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+a:hover { color: var(--text); text-decoration-color: var(--primary); }
+
+/* the shell: a top bar on a desk instead of a side menu */
+.shell { flex-direction: column; gap: 0; padding: 0; background: none; }
+.content { flex: 1 1 0; min-height: 0; }
+.sidebar { width: auto; flex: none; flex-direction: row; align-items: center; gap: 28px; height: 58px; padding: 0 24px; border: 0; border-radius: 0; background: var(--surface); box-shadow: var(--edge), 0 6px 10px -8px oklch(var(--shade) / .35); position: relative; z-index: 5; }
+.brand-row { flex: none; gap: 10px; }
+.brand { padding: 0; font-weight: 600; letter-spacing: -.02em; }
+.brand-row button.icon svg { transform: rotate(90deg); }
+.sidebar nav { flex-direction: row; gap: 4px; align-self: stretch; }
+.sidebar nav a { display: flex; align-items: center; padding: 0 12px; border-radius: 0; border-bottom: 2px solid transparent; color: var(--muted); background: none; text-decoration: none; }
+.sidebar nav a::before { content: none; }
+.sidebar nav a:hover { background: none; color: var(--text); border-bottom-color: var(--border); text-decoration: none; }
+.sidebar nav a.active { background: none; color: var(--text); font-weight: 600; border-bottom-color: var(--primary); }
+.sidebar-foot { margin: 0 0 0 auto; flex-direction: row; align-items: center; width: auto; padding: 0; border: 0; gap: 14px; }
+.sidebar-foot select { width: auto; }
+.who { width: auto; } .who small { display: none; }
+.theme-seg { width: auto; background: var(--surface-2); box-shadow: var(--press); }
+.theme-seg button { padding: 3px 10px; }
+.theme-seg button[aria-pressed="true"] { background: var(--surface); box-shadow: var(--edge), var(--cast); }
+.sidebar-rail { width: auto; flex-direction: row; align-items: center; padding: 8px 16px; background: var(--surface); box-shadow: var(--edge); }
+.avatar { background: var(--board); color: var(--board-ink); }
+@media (max-width: 860px) {
+  .shell { padding: 0; gap: 0; }
+  .sidebar { height: auto; width: auto; flex-wrap: wrap; gap: 4px 16px; padding: 8px 12px 0; }
+  .sidebar .brand { font-size: 16px; } .sidebar .brand::first-letter { font-size: inherit; }
+  .sidebar nav { order: 3; width: 100%; overflow-x: auto; }
+  .sidebar nav a { font-size: 13px; text-align: left; padding: 10px; }
+}
+
+/* sheets: cotton with a lit edge and a cast shadow, no borders */
+.card, .template, .plugin-card, .plan, .auth-card, .modal, .run-summary, .vlist { border: 0; box-shadow: var(--edge), var(--cast); }
+.card, .template, .plugin-card { content-visibility: visible; } /* paint containment would clip the cast shadow */
+.card.flat { background: var(--surface-2); box-shadow: var(--press); }
+.template:hover, .plugin-card:hover { transform: translateY(-1px); box-shadow: var(--edge), var(--cast-lift); }
+.plan.current { box-shadow: var(--edge), var(--cast), 0 0 0 2px var(--primary); }
+.modal { box-shadow: var(--edge), var(--shadow-xl); }
+.modal-backdrop { background: oklch(20% .01 40 / .45); }
+.error, .ok { border-radius: var(--r-input); }
+
+/* lists that were tables become one sheet per row; the column names move above each value */
+.table { display: block; background: none; border: 0; box-shadow: none; border-radius: 0; overflow: visible; }
+.table thead { display: none; }
+.table tbody { display: flex; flex-direction: column; gap: 12px; }
+.table tbody tr { background: var(--surface); border-radius: var(--r-container); box-shadow: var(--edge), var(--cast); }
+.table td { border: 0; }
+.table tbody tr:hover td { background: none; }
+@media (min-width: 721px) {
+  .table tbody tr { display: flex; align-items: center; gap: 16px; padding: 14px 18px; }
+  .table td { flex: 1 1 0; min-width: 0; padding: 0; text-align: left; }
+  .table td:first-child { flex: 2 1 0; font-size: 15px; }
+  .table td.actions { flex: 0 0 auto; text-align: right; }
+  .table td:not(:first-child)::before { content: attr(data-label); display: block; font-size: 12px; line-height: 16px; color: var(--muted); }
+}
+@media (max-width: 720px) { .table tbody tr { padding: 12px 14px; } }
+.vhead { background: var(--surface-2); }
+
+/* controls: letterpress cards. The main action is ink board; a settled thing is pressed in coral. */
+button:not(.link, .icon, .link-button, .palette-item, .insert-plus, .chip, .tabs *, .theme-seg *) {
+  background: var(--surface); color: var(--text); border: 0; border-radius: var(--r-button); min-height: 36px; padding: 6px 18px;
+  box-shadow: var(--edge), var(--cast); text-shadow: .5px .75px 0 var(--surface); transition: transform .12s, box-shadow .12s;
+}
+button:not(.link, .icon, .link-button, .palette-item, .insert-plus, .chip, .tabs *, .theme-seg *):hover:not(:disabled) { background: var(--surface); transform: translateY(-1px); box-shadow: var(--edge), var(--cast-lift); }
+button:not(.link, .icon, .link-button, .palette-item, .insert-plus, .chip, .tabs *, .theme-seg *):active:not(:disabled) { transform: translateY(1px); box-shadow: var(--edge); }
+button.primary { background: var(--board); color: var(--board-ink); text-shadow: 0 -.75px 0 oklch(8% .01 40); box-shadow: var(--cast); }
+button.primary:hover:not(:disabled) { background: var(--board); box-shadow: var(--cast-lift); }
+button.primary:active:not(:disabled) { background: var(--board); box-shadow: none; }
+button.link { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+button.link:hover:not(:disabled) { background: none; text-decoration-color: var(--primary); }
+button.link.danger { color: var(--err); }
+button.chip { border-radius: var(--r-input); min-height: 32px; padding: 3px 14px; background: var(--surface); box-shadow: var(--edge), var(--cast); }
+button.chip:hover:not(:disabled) { background: var(--surface); box-shadow: var(--edge), var(--cast-lift); transform: translateY(-1px); }
+button.chip.active, button.chip[aria-pressed="true"] { background: var(--surface-2); color: var(--text); box-shadow: var(--press); transform: none; }
+button.chip.active:hover:not(:disabled), button.chip[aria-pressed="true"]:hover:not(:disabled) { background: var(--surface-2); box-shadow: var(--press); transform: none; }
+input:not([type=checkbox]):not([type=radio]), select, textarea { background: var(--surface); border: 1px solid var(--muted); box-shadow: none; border-radius: var(--r-input); min-height: 36px; }
+input:not([type=checkbox]):not([type=radio]):hover, select:hover, textarea:hover { border-color: var(--text-2); box-shadow: none; }
+input:not([type=checkbox]):not([type=radio]):focus, select:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.search input { border-radius: var(--r-pill); }
+label.switch input { accent-color: var(--primary); }
+label.switch input:checked + span { display: inline-block; color: var(--ok); font-weight: 600; transform: rotate(-3deg); text-shadow: 1px 1.2px 0 oklch(var(--shade) / .22), -.5px -.5px 0 var(--hi); }
+
+/* status is an ink outline; only a settled run is pressed in coral */
+.badge { background: none; box-shadow: none; border: 1.5px solid var(--text); border-radius: 4px; color: var(--text); padding: 0 8px; font-weight: 500; }
+.badge.success { display: inline-block; background: none; border-color: transparent; color: var(--ok); font-weight: 600; transform: rotate(-3deg); text-shadow: 1px 1.2px 0 oklch(var(--shade) / .22), -.5px -.5px 0 var(--hi); }
+.badge.error { background: var(--err-bg); border-color: var(--err); color: var(--err); }
+.badge.running, .badge.queued { background: none; border: 1.5px dashed var(--muted); color: var(--text-2); }
+
+/* editor: stationery cards on a plain desk */
+.editor-bar { background: var(--surface); border: 0; border-radius: 0; box-shadow: var(--edge); }
+.palette { background: var(--surface); border: 0; box-shadow: var(--edge), 6px 0 10px -8px oklch(var(--shade) / .3); }
+.react-flow { --xy-background-color: var(--bg); --xy-background-pattern-color: color-mix(in oklch, var(--bg), var(--text) 7%); background: var(--bg); }
+.ff-node { background: var(--surface); border: 1.5px solid transparent; box-shadow: var(--edge), var(--cast); }
+.ff-node.selected { box-shadow: var(--edge), var(--cast); }
+.ff-node-icon, .panel-icon { background: var(--surface-2); color: var(--text); border-radius: 6px; }
+.react-flow__handle { background: var(--text-2); border-color: var(--surface); }
+.react-flow__minimap, .react-flow__controls { border: 0; box-shadow: var(--edge), var(--cast); }
+/* the canvas stylesheet loads after this one, so these carry an extra class to win */
+.react-flow .react-flow__minimap-node { fill: var(--muted) !important; } /* the colour is set inline by the page, so only !important can replace it */
+/* the zoom buttons are tiny icon buttons, not letterpress cards */
+.react-flow .react-flow__controls-button { min-height: 0; width: 26px; height: 26px; padding: 0; box-shadow: none; text-shadow: none; transform: none; background: var(--surface); border-radius: 0; }
+.react-flow .react-flow__controls-button:hover:not(:disabled) { background: var(--surface-2); box-shadow: none; transform: none; }
+.react-flow .react-flow__controls-button svg { fill: var(--text); max-width: 14px; max-height: 14px; }
+.tabs button.active { border-bottom-color: var(--primary); }
