@@ -496,7 +496,7 @@ a:hover { color: var(--text); text-decoration-color: var(--primary); }
 
 /* lists that were tables become one sheet per row; the column names move above each value */
 .table { display: block; background: none; border: 0; box-shadow: none; border-radius: 0; overflow: visible; }
-.table thead { display: none; }
+.sr-only, .table thead { display: block; position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; } /* the column names stay for screen readers; sighted users get them above each value */
 .table tbody { display: flex; flex-direction: column; gap: 12px; }
 .table tbody tr { background: var(--surface); border-radius: var(--r-container); box-shadow: var(--edge), var(--cast); }
 .table td { border: 0; }
@@ -557,3 +557,12 @@ label.switch input:checked + span { display: inline-block; color: var(--ok); fon
 .react-flow .react-flow__controls-button:hover:not(:disabled) { background: var(--surface-2); box-shadow: none; transform: none; }
 .react-flow .react-flow__controls-button svg { fill: var(--text); max-width: 14px; max-height: 14px; }
 .tabs button.active { border-bottom-color: var(--primary); }
+
+/* fixes found by QA */
+button { white-space: nowrap; }                                        /* "Sign out" and "+ New" wrapped onto two lines */
+button.small { padding: 3px 10px; min-height: 28px; font-size: 12px; } /* compact buttons keep their size */
+.ff-node-state.error, .ff-node-state.success { background: none; padding: 0; border-radius: 0; } /* the page-wide .error banner style must not paint the node's status icon */
+@media (max-width: 720px) {                                            /* touch targets stay 40px on phones */
+  button:not(.link, .icon, .link-button, .palette-item, .insert-plus, .chip, .tabs *, .theme-seg *, .small, .react-flow__controls-button), button.chip { min-height: 40px; }
+  input:not([type=checkbox]):not([type=radio]), select, textarea { min-height: 40px; }
+}
