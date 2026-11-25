@@ -10,18 +10,18 @@ const TRIGGER_LABEL = { 'trigger.webhook': 'Webhook', 'trigger.cron': 'Schedule'
 /** One table row. Memoised: switching one workflow on does not re-render the others. */
 const WorkflowRow = React.memo(function WorkflowRow({ w, act }) {
   return (
-    <tr key={w.id}>
-      <td data-label="Name"><Link to={`/workflows/${w.id}`}><b>{w.name}</b></Link></td>
-      <td data-label="Trigger">{[...new Set(w.triggers.map((t) => TRIGGER_LABEL[t] ?? t))].join(', ') || '—'}</td>
-      <td data-label="Nodes">{w.nodeCount}</td>
-      <td className="muted" data-label="Updated" title={fmtDate(w.updatedAt)}>{fmtAgo(w.updatedAt)}</td>
-      <td data-label="Active">
+    <tr key={w.id} role="row">
+      <td role="cell"data-label="Name"><Link to={`/workflows/${w.id}`}><b>{w.name}</b></Link></td>
+      <td role="cell"data-label="Trigger">{[...new Set(w.triggers.map((t) => TRIGGER_LABEL[t] ?? t))].join(', ') || '—'}</td>
+      <td role="cell"data-label="Nodes">{w.nodeCount}</td>
+      <td role="cell"className="muted" data-label="Updated" title={fmtDate(w.updatedAt)}>{fmtAgo(w.updatedAt)}</td>
+      <td role="cell"data-label="Active">
         <label className="switch" aria-label={`Toggle ${w.name}`}>
           <input type="checkbox" checked={w.active} onChange={() => act(() => api(`/workflows/${w.id}/${w.active ? 'deactivate' : 'activate'}`, { method: 'POST' }))} />
           <span>{w.active ? 'On' : 'Off'}</span>
         </label>
       </td>
-      <td className="actions">
+      <td role="cell"className="actions">
         <button className="link" onClick={() => act(() => api(`/workflows/${w.id}/duplicate`, { method: 'POST' }))}>Duplicate</button>
         <button className="link danger" onClick={() => window.confirm(`Delete "${w.name}" and its execution history?`) && act(() => api(`/workflows/${w.id}`, { method: 'DELETE' }))}>Delete</button>
       </td>
@@ -92,9 +92,9 @@ export default function Workflows() {
           </div>
         </div>
       ) : (
-        <table className="table">
-          <thead><tr><th>Name</th><th>Trigger</th><th>Nodes</th><th>Updated</th><th>Active</th><th /></tr></thead>
-          <tbody>
+        <table className="table" role="table" aria-label="Workflows">
+          <thead role="rowgroup"><tr role="row"><th role="columnheader">Name</th><th role="columnheader">Trigger</th><th role="columnheader">Nodes</th><th role="columnheader">Updated</th><th role="columnheader">Active</th><th role="columnheader"><span className="sr-only">Actions</span></th></tr></thead>
+          <tbody role="rowgroup">
             {shown.map((w) => <WorkflowRow key={w.id} w={w} act={act} />)}
           </tbody>
         </table>

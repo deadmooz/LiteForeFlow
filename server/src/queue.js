@@ -28,7 +28,8 @@ function boundResult(result) {
   return { ...result, lastOutput: (result.lastOutput ?? []).slice(0, 20), results: undefined, truncated: true };
 }
 
-const unavailable = (message) => Object.assign(new Error(message), { status: 503 });
+// `expose`: the message is written for the user ("retry shortly"), so the error handler may show it instead of "Internal server error".
+const unavailable = (message) => Object.assign(new Error(message), { status: 503, expose: true });
 async function within(ms, message, fn) {
   let timer;
   try {
@@ -73,6 +74,7 @@ function createMemoryDriver() {
       }
     },
     async removeSchedule(key) { schedules.get(key)?.(); schedules.delete(key); },
+    async ping() { /* in-process: always reachable */ },
     async startWorker() { /* jobs run in-process as they are enqueued */ },
     async startEvents() {},
     async close() { for (const stop of schedules.values()) stop(); schedules.clear(); },
@@ -137,6 +139,7 @@ async function createBullDriver() {
       });
     },
     async removeSchedule(key) { await queue.removeJobScheduler(key); },
+    async ping() { await within(1500, 'Redis is not answering', () => connection.ping()); },
     async startWorker() {
       if (worker) return;
       worker = new Worker(name, async (job) => boundResult(await handler(job.data)), {
@@ -170,6 +173,8 @@ const driver = queueMode === 'bullmq' ? await createBullDriver() : createMemoryD
 export const enqueue = (payload, opts) => driver.enqueue(payload, opts);
 export const upsertSchedule = (key, spec, payload) => driver.upsertSchedule(key, spec, payload);
 export const removeSchedule = (key) => driver.removeSchedule(key);
+/** Rejects when the queue cannot be reached (used by /api/health). */
+export const queueHealth = () => driver.ping();
 export const startWorker = () => driver.startWorker();
 export const startEvents = () => driver.startEvents();
 export const closeQueue = () => driver.close();

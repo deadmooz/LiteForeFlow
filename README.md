@@ -29,7 +29,7 @@ Stop with `docker compose down` (your data stays); `docker compose logs -f` show
 
 ## What you get (the same as the Lite edition)
 
-- **Visual editor** with 15 templates, friendly fields, a **schedule picker**, per-block *Data*, *Test this step*, n8n import
+- **Visual editor** with 13 templates, friendly fields, a **schedule picker**, per-block *Data*, *Test this step*, n8n import
 - **Plugins**: Respond to Webhook, data tools (Filter, Sort, Remove Duplicates, Date & Time, Crypto, batches), a REST connector;
   add your own - [docs/PLUGINS.md](docs/PLUGINS.md)
 - **Free local AI with Ollama**, plus OpenAI / Anthropic / any OpenAI-compatible API (LLM and AI Agent blocks)

@@ -58,6 +58,8 @@ Another machine runs Ollama? Set `OLLAMA_HOST=http://that-machine:11434` in `.en
 - **If Redis is down:** webhooks answer `503` within about 5 seconds (senders can retry) and recover by themselves; reads keep working.
 - **Backup / restore:** `docker compose exec postgres pg_dump -U liteforeflow liteforeflow > backup.sql`; restore with `psql`. Keep the secret too.
 - **Sharing it:** put it behind HTTPS, set `ALLOW_SIGNUP=false`, and do not publish Postgres or Redis ports.
+- **Behind a reverse proxy (Caddy, nginx, Traefik):** set `TRUST_PROXY=1` in `.env`, so the sign-in limit sees each visitor's real address. Leave it off when people connect directly: otherwise anyone could send a fake `X-Forwarded-For` header to dodge the limit.
+- **Health check:** `/api/health` now checks Postgres and Redis. It answers `503` with `checks.db` or `checks.queue` set to `false` when one of them cannot be reached.
 
 ## Tests
 

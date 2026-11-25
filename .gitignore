@@ -22,7 +22,18 @@ server/test/bench.mjs
 server/test/load.mjs
 server/test/e2e-*.mjs
 docs/QA_*.md
+docs/*QA*.md
+docs/*TESTCASES*.md
 QA_REPORT.md
+
+# QA scripts, runs, logs and state kept next to the code
+qa/
+**/qa/
+qa-*.mjs
+qa-*.js
+qa-*.json
+ops-state.json
+.hallmark/
 *.db
 *.db-shm
 *.db-wal
